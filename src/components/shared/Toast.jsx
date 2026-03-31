@@ -1,0 +1,107 @@
+/* eslint-disable react-refresh/only-export-components */
+import { useState, useCallback } from 'react';
+
+const TYPE_STYLES = {
+  success: {
+    container: 'bg-green-50 border-green-200 text-green-800',
+    icon: (
+      <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+      </svg>
+    ),
+  },
+  error: {
+    container: 'bg-red-50 border-red-200 text-red-800',
+    icon: (
+      <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    ),
+  },
+  info: {
+    container: 'bg-blue-50 border-blue-200 text-blue-800',
+    icon: (
+      <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  warning: {
+    container: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+    icon: (
+      <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+      </svg>
+    ),
+  },
+};
+
+/**
+ * Toast notification hook.
+ * @returns {{ toasts: Array, addToast: (message: string, type?: string) => void, removeToast: (id: string) => void }}
+ */
+export function useToast() {
+  const [toasts, setToasts] = useState([]);
+
+  const removeToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const addToast = useCallback(
+    (message, type = 'info') => {
+      const id = `toast_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const toast = { id, message, type };
+      setToasts((prev) => [...prev, toast]);
+
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => {
+        removeToast(id);
+      }, 3000);
+
+      return id;
+    },
+    [removeToast]
+  );
+
+  return { toasts, addToast, removeToast };
+}
+
+/**
+ * Single toast notification item.
+ */
+function ToastItem({ toast, onRemove }) {
+  const style = TYPE_STYLES[toast.type] || TYPE_STYLES.info;
+
+  return (
+    <div
+      className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg ${style.container} animate-slide-in`}
+    >
+      <div className="shrink-0">{style.icon}</div>
+      <p className="text-sm font-medium flex-1">{toast.message}</p>
+      <button
+        onClick={() => onRemove(toast.id)}
+        className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Toast container rendering active toasts.
+ * @param {{ toasts: Array, removeToast: (id: string) => void }}
+ */
+export function ToastContainer({ toasts, removeToast }) {
+  if (toasts.length === 0) return null;
+
+  return (
+    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm">
+      {toasts.map((toast) => (
+        <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
+      ))}
+    </div>
+  );
+}
