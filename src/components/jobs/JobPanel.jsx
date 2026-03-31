@@ -17,8 +17,8 @@ const TABS = [
   { id: 'maintenance', label: '点検／修繕', count: maintenances.length },
 ];
 
-export default function JobPanel({ onSelectOpportunity }) {
-  const [collapsed, setCollapsed] = useState(false);
+export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle }) {
+  const collapsed = !isOpen;
   const [activeTab, setActiveTab] = useState('opportunity');
   const [searchText, setSearchText] = useState('');
   const [activeStages, setActiveStages] = useState(new Set(ALL_STAGES));
@@ -85,7 +85,7 @@ export default function JobPanel({ onSelectOpportunity }) {
     return (
       <div className="fixed right-0 top-14 z-30">
         <button
-          onClick={() => setCollapsed(false)}
+          onClick={() => onToggle()}
           className="bg-white border border-gray-300 rounded-l-lg px-2 py-3 shadow-md hover:bg-gray-50 transition"
           title="案件パネルを開く"
         >
@@ -112,7 +112,7 @@ export default function JobPanel({ onSelectOpportunity }) {
           </span>
         </h2>
         <button
-          onClick={() => setCollapsed(true)}
+          onClick={() => onToggle()}
           className="p-1 rounded hover:bg-gray-200 transition"
           title="パネルを閉じる"
         >
