@@ -40,7 +40,8 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
       endDate.setMonth(endDate.getMonth() + 1, 0);
       endDate.setDate(endDate.getDate() + 14);
 
-      const result = await syncFromOutlook(token, MEMBERS, startDate, endDate);
+      const syncableMembers = MEMBERS.filter((m) => !m.skipOutlookSync);
+      const result = await syncFromOutlook(token, syncableMembers, startDate, endDate);
       if (result.success) {
         alert(`Outlook同期完了: ${result.count}件のイベントを取得しました`);
       } else {
