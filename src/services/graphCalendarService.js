@@ -136,7 +136,7 @@ export async function fetchMemberCalendarEvents(accessToken, memberEmail, startD
  */
 export async function fetchAllMembersCalendarEvents(accessToken, members, startDate, endDate) {
   const results = await Promise.allSettled(
-    members.map((m) => fetchMemberCalendarEvents(accessToken, m.outlookEmail, startDate, endDate))
+    members.map((m) => fetchMemberCalendarEvents(accessToken, m.outlookEmail || m.email, startDate, endDate))
   );
 
   const allEvents = [];
