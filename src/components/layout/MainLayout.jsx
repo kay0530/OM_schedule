@@ -5,6 +5,7 @@ import JobPanel from '../jobs/JobPanel';
 
 export default function MainLayout({ activeView, onNavigate, currentDate, onDateChange, onSelectOpportunity, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [jobPanelOpen, setJobPanelOpen] = useState(true);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -21,12 +22,16 @@ export default function MainLayout({ activeView, onNavigate, currentDate, onDate
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
-      <main className="pt-14 lg:pl-60 pr-0 lg:pr-80">
+      <main className={`pt-14 lg:pl-60 transition-all duration-200 ${jobPanelOpen ? 'lg:pr-80' : 'pr-0'}`}>
         <div className="p-4 lg:p-6">
           {children}
         </div>
       </main>
-      <JobPanel onSelectOpportunity={onSelectOpportunity} />
+      <JobPanel
+        onSelectOpportunity={onSelectOpportunity}
+        isOpen={jobPanelOpen}
+        onToggle={() => setJobPanelOpen(!jobPanelOpen)}
+      />
     </div>
   );
 }
