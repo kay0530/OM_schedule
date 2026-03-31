@@ -231,7 +231,21 @@ export default function MonthlyView({ navigate, currentDate, onDropJob }) {
 
       if (items.length === 0) return null;
 
-      return <div className="space-y-0.5">{items}</div>;
+      // Show max 2 items, then "+N" badge
+      const MAX_VISIBLE = 2;
+      const visible = items.slice(0, MAX_VISIBLE);
+      const remaining = items.length - MAX_VISIBLE;
+
+      return (
+        <div className="space-y-0.5 overflow-hidden" style={{ maxWidth: '96px' }}>
+          {visible}
+          {remaining > 0 && (
+            <div className="text-[10px] text-gray-400 text-center">
+              +{remaining}件
+            </div>
+          )}
+        </div>
+      );
     },
     [eventIndex, assignmentIndex]
   );
@@ -246,17 +260,18 @@ export default function MonthlyView({ navigate, currentDate, onDropJob }) {
 
       {/* Scrollable table container */}
       <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm">
-        <table className="w-full border-collapse text-xs min-w-[900px]">
+        <table className="border-collapse text-xs" style={{ tableLayout: 'fixed', width: `${60 + MEMBERS.length * 100}px` }}>
           {/* Header row with member names */}
           <thead className="sticky top-0 z-10">
             <tr className="bg-gray-50">
-              <th className="border border-gray-200 px-2 py-2 text-left font-medium text-gray-600 w-20 min-w-[80px]">
+              <th className="border border-gray-200 px-1 py-2 text-left font-medium text-gray-600" style={{ width: '60px' }}>
                 日付
               </th>
               {MEMBERS.map((member) => (
                 <th
                   key={member.id}
-                  className="border border-gray-200 px-1 py-2 text-center font-medium min-w-[80px]"
+                  className="border border-gray-200 px-1 py-2 text-center font-medium"
+                  style={{ width: '100px' }}
                   style={{
                     borderTop: `3px solid ${member.color}`,
                     color: member.color,
@@ -326,9 +341,10 @@ export default function MonthlyView({ navigate, currentDate, onDropJob }) {
                           return (
                             <td
                               key={member.id}
-                              className={`border border-gray-200 px-1 py-0.5 align-top transition-colors ${
+                              className={`border border-gray-200 px-1 py-0.5 align-top transition-colors overflow-hidden ${
                                 isDragOver ? 'bg-blue-100 ring-1 ring-inset ring-blue-400' : ''
                               }`}
+                              style={{ maxWidth: '100px' }}
                               onClick={() => handleWeekClick(getWeekMonday(date))}
                               onDragOver={(e) => handleCellDragOver(e, dateStr, member.id)}
                               onDragLeave={handleCellDragLeave}
