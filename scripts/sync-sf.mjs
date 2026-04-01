@@ -58,7 +58,8 @@ const OPP_QUERY = `
 SELECT Id, Name, StageName2__c, ConstractType__c, AccountId, Account.Name,
        LocationAddress__c, KojiSekouyoteibi__c, KojiSekoukiboubi__c,
        Kankobi__c, ConstructionCategory__c, ConstUser__c,
-       AllSchaduleBikou__c, OwnerId
+       AllSchaduleBikou__c, OwnerId,
+       SurveyKakutei__c, KojiSekouKakuteibi__c
 FROM Opportunity
 WHERE ConstractType__c = 'レンタル'
   AND StageName2__c NOT IN ('失注', 'ペンディング', '99_完了')
@@ -82,6 +83,8 @@ const opportunities = oppRecords.map((rec) => ({
   constructionUserId: rec.ConstUser__c || null,
   scheduleMemo: rec.AllSchaduleBikou__c || null,
   ownerId: rec.OwnerId || null,
+  surveyConfirmed: rec.SurveyKakutei__c || false,
+  constructionDateConfirmed: rec.KojiSekouKakuteibi__c || false,
 }));
 
 writeFileSync(OPP_OUTPUT, JSON.stringify(opportunities, null, 2), 'utf-8');
