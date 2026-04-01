@@ -94,7 +94,7 @@ export default function JobCard({ opportunity: item, onSelect }) {
       {/* Name with Salesforce link */}
       <p className="font-semibold text-sm text-gray-900 truncate group-hover:text-blue-700">
         <a
-          href={`https://altenergy.lightning.force.com/lightning/r/${item.type === 'maintenance' ? 'Maintenance__c' : 'Opportunity'}/${item.id}/view`}
+          href={`https://altenergyinc.my.salesforce.com/lightning/r/${item.type === 'maintenance' ? 'Maintenance__c' : 'Opportunity'}/${item.id}/view`}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
@@ -137,9 +137,15 @@ export default function JobCard({ opportunity: item, onSelect }) {
           </span>
         )}
 
-        {/* Confirmed indicator */}
+        {/* Confirmed indicators */}
         {isMaint && item.dateConfirmed && (
           <span className="text-xs text-green-600 font-medium">✓確定</span>
+        )}
+        {!isMaint && item.surveyConfirmed && (
+          <span className="text-xs text-green-600 font-medium">✓現調</span>
+        )}
+        {!isMaint && item.constructionDateConfirmed && (
+          <span className="text-xs text-green-600 font-medium">✓着工</span>
         )}
       </div>
 

@@ -14,6 +14,35 @@ import { isFirestoreEnabled, saveFilterPresets, loadFilterPresets, subscribeFilt
 const ALL_STAGES = [...new Set(opportunities.map((o) => o.stage))].filter(Boolean).sort();
 const ALL_MAINT_STATUSES = [...new Set(maintenances.map((m) => m.status))].filter(Boolean).sort();
 
+// Tri-state filter chip: null (all) → true (confirmed only) → false (unconfirmed only) → null
+function TriStateChip({ label, value, onChange }) {
+  function cycle() {
+    if (value === null) onChange(true);
+    else if (value === true) onChange(false);
+    else onChange(null);
+  }
+
+  let classes = 'bg-gray-50 text-gray-400 border-gray-200';
+  let icon = '';
+  if (value === true) {
+    classes = 'bg-green-100 text-green-800 border-green-300';
+    icon = '✓ ';
+  } else if (value === false) {
+    classes = 'bg-red-100 text-red-800 border-red-300';
+    icon = '✗ ';
+  }
+
+  return (
+    <button
+      onClick={cycle}
+      className={`text-xs px-2 py-0.5 rounded-full border transition font-medium ${classes}`}
+      title={value === null ? '全て表示' : value ? '確定のみ' : '未確定のみ'}
+    >
+      {icon}{label}
+    </button>
+  );
+}
+
 const PRESETS_STORAGE_KEY = 'construction-schedule-filter-presets';
 const LAST_FILTER_STORAGE_KEY = 'construction-schedule-last-filter';
 
@@ -62,6 +91,10 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     }
     return new Set(ALL_MAINT_STATUSES);
   });
+
+  // Confirmation flag filters for opportunities
+  const [surveyConfirmedFilter, setSurveyConfirmedFilter] = useState(null); // null=all, true=confirmed, false=unconfirmed
+  const [constructionConfirmedFilter, setConstructionConfirmedFilter] = useState(null);
 
   const [presets, setPresets] = useState(loadPresets);
   const [showPresetForm, setShowPresetForm] = useState(false);
@@ -158,13 +191,15 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     const q = searchText.toLowerCase();
     return opportunities.filter((opp) => {
       if (!activeStages.has(opp.stage)) return false;
+      if (surveyConfirmedFilter !== null && !!opp.surveyConfirmed !== surveyConfirmedFilter) return false;
+      if (constructionConfirmedFilter !== null && !!opp.constructionDateConfirmed !== constructionConfirmedFilter) return false;
       if (q) {
         const hay = `${opp.name} ${opp.accountName || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [searchText, activeStages]);
+  }, [searchText, activeStages, surveyConfirmedFilter, constructionConfirmedFilter]);
 
   // Filtered maintenances
   const filteredMaints = useMemo(() => {
@@ -337,6 +372,22 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
             );
           })}
         </div>
+
+        {/* Confirmation flag filters (opportunities only) */}
+        {activeTab === 'opportunity' && (
+          <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-gray-100">
+            <TriStateChip
+              label="本現調確定"
+              value={surveyConfirmedFilter}
+              onChange={setSurveyConfirmedFilter}
+            />
+            <TriStateChip
+              label="着工日確定"
+              value={constructionConfirmedFilter}
+              onChange={setConstructionConfirmedFilter}
+            />
+          </div>
+        )}
       </div>
 
       {/* Saved filter presets */}
