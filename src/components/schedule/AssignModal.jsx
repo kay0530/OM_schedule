@@ -102,40 +102,77 @@ export default function AssignModal({
 
       dispatch({ type: 'ADD_ASSIGNMENT', payload: assignmentPayload });
 
-      // Create Outlook event if checked and authenticated
-      if (syncOutlook && member && !member.skipOutlookSync) {
-        if (!isAuthenticated) {
-          outlookResults.push({ member: member.nameJa, success: false, error: 'MS365未ログイン' });
-        } else {
-          try {
-            const token = await getToken();
-            if (!token) {
-              outlookResults.push({ member: member.nameJa, success: false, error: 'トークン取得失敗' });
+      // Collect members for Outlook event (handled after loop)
+    }
+
+    // Create Outlook event on logged-in user's calendar with selected members as attendees
+    if (syncOutlook && selectedMembers.length > 0) {
+      if (!isAuthenticated) {
+        outlookResults.push({ member: '自分', success: false, error: 'MS365未ログイン。右上の「MS365 連携」からログインしてください。' });
+      } else {
+        try {
+          const token = await getToken();
+          if (!token) {
+            outlookResults.push({ member: '自分', success: false, error: 'トークン取得失敗。再ログインしてください。' });
+          } else {
+            // Build attendees list from selected members
+            const attendees = selectedMembers
+              .map((mid) => MEMBERS.find((m) => m.id === mid))
+              .filter((m) => m && !m.skipOutlookSync)
+              .map((m) => ({
+                emailAddress: { address: m.email, name: m.nameJa },
+                type: 'required',
+              }));
+
+            const eventData = {
+              subject: opportunity.name,
+              start: {
+                dateTime: `${date}T${startTime}:00`,
+                timeZone: 'Asia/Tokyo',
+              },
+              end: {
+                dateTime: `${date}T${endTime}:00`,
+                timeZone: 'Asia/Tokyo',
+              },
+              location: {
+                displayName: opportunity.address || '',
+              },
+              body: {
+                contentType: 'Text',
+                content: opportunity.scheduleMemo || opportunity.content || '',
+              },
+              attendees: attendees.length > 0 ? attendees : undefined,
+            };
+
+            // Create on logged-in user's own calendar (using /me/events)
+            const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(eventData),
+            });
+
+            if (response.ok) {
+              const memberNames = attendees.map((a) => a.emailAddress.name).join(', ');
+              outlookResults.push({
+                member: '自分',
+                success: true,
+                error: null,
+                detail: memberNames ? `出席者: ${memberNames}` : null,
+              });
             } else {
-              const eventData = {
-                subject: opportunity.name,
-                start: {
-                  dateTime: `${date}T${startTime}:00`,
-                  timeZone: 'Asia/Tokyo',
-                },
-                end: {
-                  dateTime: `${date}T${endTime}:00`,
-                  timeZone: 'Asia/Tokyo',
-                },
-                location: {
-                  displayName: opportunity.address || '',
-                },
-                body: {
-                  contentType: 'Text',
-                  content: opportunity.scheduleMemo || opportunity.content || '',
-                },
-              };
-              const result = await createCalendarEvent(token, member.email, eventData);
-              outlookResults.push({ member: member.nameJa, success: result.success, error: result.error });
+              const errBody = await response.json().catch(() => ({}));
+              outlookResults.push({
+                member: '自分',
+                success: false,
+                error: errBody.error?.message || `HTTP ${response.status}`,
+              });
             }
-          } catch (err) {
-            outlookResults.push({ member: member.nameJa, success: false, error: err.message });
           }
+        } catch (err) {
+          outlookResults.push({ member: '自分', success: false, error: err.message });
         }
       }
     }
