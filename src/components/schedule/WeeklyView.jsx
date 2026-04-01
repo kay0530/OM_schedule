@@ -47,12 +47,30 @@ function detectStatusType(title) {
  * Shows days of the week as columns, 30-minute time slots as rows,
  * with member filter chips and events positioned by time.
  */
-export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob }) {
+export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick }) {
   const { events, loading } = useCalendar();
   const { assignments, settings } = useApp();
 
   const scrollRef = useRef(null);
   const hasAutoScrolled = useRef(false);
+
+  // Axis mode: 'date' (default) or 'person'
+  const [axisMode, setAxisMode] = useState(() => {
+    try {
+      return localStorage.getItem('construction-schedule-view-axis') || 'date';
+    } catch {
+      return 'date';
+    }
+  });
+
+  function handleAxisChange(mode) {
+    setAxisMode(mode);
+    try {
+      localStorage.setItem('construction-schedule-view-axis', mode);
+    } catch {
+      // localStorage unavailable
+    }
+  }
 
   // Member filter state
   const [visibleMembers, setVisibleMembers] = useState(
@@ -296,6 +314,33 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
         </div>
       </div>
 
+      {/* Axis toggle + Member filter chips */}
+      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+        {/* Axis mode toggle */}
+        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden mr-2">
+          <button
+            onClick={() => handleAxisChange('date')}
+            className={`text-xs px-3 py-1 font-medium transition-colors ${
+              axisMode === 'date'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            日付軸
+          </button>
+          <button
+            onClick={() => handleAxisChange('person')}
+            className={`text-xs px-3 py-1 font-medium transition-colors ${
+              axisMode === 'person'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            人軸
+          </button>
+        </div>
+      </div>
+
       {/* Member filter chips */}
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
         <button
@@ -338,94 +383,436 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       <div className="bg-white rounded-xl overflow-hidden border border-gray-200 flex-1 min-h-0 shadow-sm">
         <div ref={scrollRef} className="h-full overflow-auto">
           <div className="flex flex-col">
-            {/* Sticky header */}
-            <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
-              {/* Day headers row */}
-              <div className="flex">
-                {/* Time column spacer */}
-                <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-30 bg-white" />
 
-                {/* Day columns */}
-                {displayDates.map((date, dIdx) => {
-                  const today = isToday(date);
-                  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+            {/* ========== DATE-AXIS VIEW (default) ========== */}
+            {axisMode === 'date' && (
+              <>
+                {/* Sticky header */}
+                <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+                  {/* Day headers row */}
+                  <div className="flex">
+                    {/* Time column spacer */}
+                    <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-30 bg-white" />
 
-                  return (
-                    <div
-                      key={toISODate(date)}
-                      className={`flex-1 min-w-[120px] text-center py-2 ${
-                        dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
-                      } ${today ? 'bg-blue-50' : ''}`}
-                    >
-                      <div className={`text-xs ${isWeekend ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {getDayNameJa(date)}
+                    {/* Day columns */}
+                    {displayDates.map((date, dIdx) => {
+                      const today = isToday(date);
+                      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+                      return (
+                        <div
+                          key={toISODate(date)}
+                          className={`flex-1 min-w-[120px] text-center py-2 ${
+                            dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
+                          } ${today ? 'bg-blue-50' : ''}`}
+                        >
+                          <div className={`text-xs ${isWeekend ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {getDayNameJa(date)}
+                          </div>
+                          <div
+                            className={`text-sm font-bold ${
+                              today
+                                ? 'text-blue-600'
+                                : isWeekend
+                                  ? 'text-gray-400'
+                                  : 'text-gray-800'
+                            }`}
+                          >
+                            {date.getMonth() + 1}/{date.getDate()}
+                          </div>
+                          {/* Member sub-columns header */}
+                          {visibleOrderedMembers.length > 1 && (
+                            <div className="flex mt-1 gap-px px-px">
+                              {visibleOrderedMembers.map((member) => (
+                                <div
+                                  key={member.id}
+                                  className="flex-1 min-w-0 text-[9px] text-white font-medium rounded-sm py-0.5 truncate"
+                                  style={{ backgroundColor: member.color }}
+                                  title={member.nameJa}
+                                >
+                                  {member.nameJa}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* All-day events banner */}
+                  {hasAnyAllDayEvents && (
+                    <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
+                      {/* Time label */}
+                      <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-gray-400 sticky left-0 z-30 bg-white">
+                        終日
                       </div>
+                      {/* Day columns */}
+                      {displayDates.map((date, dIdx) => (
+                        <div
+                          key={`allday-${toISODate(date)}`}
+                          className={`flex-1 min-w-[120px] flex ${
+                            dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
+                          }`}
+                        >
+                          {visibleOrderedMembers.map((member) => {
+                            const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
+                            return (
+                              <div
+                                key={`allday-${member.id}-${toISODate(date)}`}
+                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5"
+                              >
+                                {allDayEvts.map((evt) => (
+                                  <div
+                                    key={evt.id}
+                                    className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5"
+                                    style={{
+                                      backgroundColor: `${member.color}20`,
+                                      borderLeft: `2px solid ${member.color}`,
+                                      color: member.color,
+                                    }}
+                                    title={evt.title}
+                                  >
+                                    {evt.title}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Time grid body */}
+                <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
+                  {/* Time labels column (sticky left) */}
+                  <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-10 bg-white">
+                    {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
                       <div
-                        className={`text-sm font-bold ${
-                          today
-                            ? 'text-blue-600'
-                            : isWeekend
-                              ? 'text-gray-400'
-                              : 'text-gray-800'
+                        key={hour}
+                        className="border-b border-gray-100 text-right pr-2 text-[11px] text-gray-400 relative"
+                        style={{ height: `${HOUR_HEIGHT}px` }}
+                      >
+                        <span className="absolute -top-2 right-2">
+                          {String(hour).padStart(2, '0')}:00
+                        </span>
+                        {/* Half-hour tick */}
+                        <span className="absolute right-2 text-[10px] text-gray-300" style={{ top: `${HOUR_HEIGHT / 2 - 6}px` }}>
+                          {String(hour).padStart(2, '0')}:30
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Day columns with member sub-columns */}
+                  {displayDates.map((date, dIdx) => {
+                    const today = isToday(date);
+                    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                    const todayInThisColumn = today;
+
+                    return (
+                      <div
+                        key={toISODate(date)}
+                        className={`flex-1 min-w-[120px] flex relative ${
+                          dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
+                        } ${today ? 'bg-blue-50/30' : ''} ${isWeekend ? 'bg-gray-50/50' : ''}`}
+                      >
+                        {/* Current time indicator */}
+                        {todayInThisColumn && currentTimePos !== null && (
+                          <div
+                            className="absolute left-0 right-0 z-30 pointer-events-none"
+                            style={{ top: `${currentTimePos}px` }}
+                          >
+                            <div className="relative">
+                              <div className="absolute left-0 w-2 h-2 rounded-full bg-red-500 -translate-y-1/2" />
+                              <div className="absolute left-0 right-0 h-px bg-red-500" />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Member sub-columns */}
+                        {visibleOrderedMembers.map((member, mIdx) => {
+                          const memberEvents = getEventsForMemberDate(member.email, date);
+                          const memberAssignments = getAssignmentsForMemberDate(member.id, date);
+                          const statusType = getMemberStatus(member.email, date);
+
+                          return (
+                            <div
+                              key={`${toISODate(date)}-${member.id}`}
+                              className={`flex-1 min-w-0 relative ${
+                                mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-100' : ''
+                              }`}
+                            >
+                              {/* Hour grid lines (drop targets) */}
+                              {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => {
+                                const cellKey = `${toISODate(date)}-${member.id}-${hour}`;
+                                const isDragOver = dragOverCell === cellKey;
+                                return (
+                                  <div
+                                    key={hour}
+                                    className={`border-b border-gray-100 relative transition-colors ${
+                                      isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
+                                    }`}
+                                    style={{ height: `${HOUR_HEIGHT}px` }}
+                                    onClick={() => handleSlotClick(date, hour, 0, member.id)}
+                                    onDragOver={(e) => handleDragOver(e, date, hour, member.id)}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={(e) => handleDrop(e, date, hour, member.id)}
+                                  >
+                                    {/* Half-hour divider */}
+                                    <div
+                                      className="absolute left-0 right-0 border-b border-gray-50"
+                                      style={{ top: `${HOUR_HEIGHT / 2}px` }}
+                                    />
+                                  </div>
+                                );
+                              })}
+
+                              {/* Status overlay (不可/休み/移動) */}
+                              {statusType && (
+                                <StatusOverlay statusType={statusType} totalHeight={gridHeight} />
+                              )}
+
+                              {/* Calendar events */}
+                              {memberEvents.map((event) => (
+                                <EventBlock
+                                  key={event.id}
+                                  event={event}
+                                  hourHeight={HOUR_HEIGHT}
+                                  startHour={START_HOUR}
+                                  memberColor={member.color}
+                                  onClick={onEventClick}
+                                />
+                              ))}
+
+                              {/* Assignment events */}
+                              {memberAssignments.map((assignment) => (
+                                <EventBlock
+                                  key={assignment.id}
+                                  event={assignment}
+                                  hourHeight={HOUR_HEIGHT}
+                                  startHour={START_HOUR}
+                                  memberColor={member.color}
+                                  onClick={onEventClick}
+                                />
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ========== PERSON-AXIS VIEW ========== */}
+            {axisMode === 'person' && (
+              <>
+                {/* Sticky header */}
+                <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+                  {/* Member headers row */}
+                  <div className="flex">
+                    {/* Time column spacer */}
+                    <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-30 bg-white" />
+
+                    {/* Member columns */}
+                    {visibleOrderedMembers.map((member, mIdx) => (
+                      <div
+                        key={member.id}
+                        className={`flex-1 min-w-[100px] text-center py-2 ${
+                          mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
                         }`}
                       >
-                        {date.getMonth() + 1}/{date.getDate()}
-                      </div>
-                      {/* Member sub-columns header */}
-                      {visibleOrderedMembers.length > 1 && (
-                        <div className="flex mt-1 gap-px px-px">
-                          {visibleOrderedMembers.map((member) => (
-                            <div
-                              key={member.id}
-                              className="flex-1 min-w-0 text-[9px] text-white font-medium rounded-sm py-0.5 truncate"
-                              style={{ backgroundColor: member.color }}
-                              title={member.nameJa}
-                            >
-                              {member.nameJa}
-                            </div>
-                          ))}
+                        {/* Member name with color bar */}
+                        <div
+                          className="text-xs font-bold text-white rounded-sm mx-1 py-1"
+                          style={{ backgroundColor: member.color }}
+                        >
+                          {member.nameJa}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* All-day events banner */}
-              {hasAnyAllDayEvents && (
-                <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
-                  {/* Time label */}
-                  <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-gray-400 sticky left-0 z-30 bg-white">
-                    終日
+                        {/* Day sub-columns header */}
+                        <div className="flex mt-1 gap-px px-px">
+                          {displayDates.map((date) => {
+                            const today = isToday(date);
+                            const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                            return (
+                              <div
+                                key={toISODate(date)}
+                                className={`flex-1 min-w-0 text-[9px] font-medium rounded-sm py-0.5 truncate ${
+                                  today
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : isWeekend
+                                      ? 'bg-gray-100 text-gray-400'
+                                      : 'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`${date.getMonth() + 1}/${date.getDate()} ${getDayNameJa(date)}`}
+                              >
+                                {date.getMonth() + 1}/{date.getDate()}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  {/* Day columns */}
-                  {displayDates.map((date, dIdx) => (
+
+                  {/* All-day events banner */}
+                  {hasAnyAllDayEvents && (
+                    <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
+                      {/* Time label */}
+                      <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-gray-400 sticky left-0 z-30 bg-white">
+                        終日
+                      </div>
+                      {/* Member columns */}
+                      {visibleOrderedMembers.map((member, mIdx) => (
+                        <div
+                          key={`allday-member-${member.id}`}
+                          className={`flex-1 min-w-[100px] flex ${
+                            mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
+                          }`}
+                        >
+                          {displayDates.map((date) => {
+                            const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
+                            return (
+                              <div
+                                key={`allday-${member.id}-${toISODate(date)}`}
+                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5"
+                              >
+                                {allDayEvts.map((evt) => (
+                                  <div
+                                    key={evt.id}
+                                    className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5"
+                                    style={{
+                                      backgroundColor: `${member.color}20`,
+                                      borderLeft: `2px solid ${member.color}`,
+                                      color: member.color,
+                                    }}
+                                    title={evt.title}
+                                  >
+                                    {evt.title}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Time grid body */}
+                <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
+                  {/* Time labels column (sticky left) */}
+                  <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-10 bg-white">
+                    {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
+                      <div
+                        key={hour}
+                        className="border-b border-gray-100 text-right pr-2 text-[11px] text-gray-400 relative"
+                        style={{ height: `${HOUR_HEIGHT}px` }}
+                      >
+                        <span className="absolute -top-2 right-2">
+                          {String(hour).padStart(2, '0')}:00
+                        </span>
+                        {/* Half-hour tick */}
+                        <span className="absolute right-2 text-[10px] text-gray-300" style={{ top: `${HOUR_HEIGHT / 2 - 6}px` }}>
+                          {String(hour).padStart(2, '0')}:30
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Member columns with day sub-columns */}
+                  {visibleOrderedMembers.map((member, mIdx) => (
                     <div
-                      key={`allday-${toISODate(date)}`}
-                      className={`flex-1 min-w-[120px] flex ${
-                        dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
+                      key={member.id}
+                      className={`flex-1 min-w-[100px] flex relative ${
+                        mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
                       }`}
                     >
-                      {visibleOrderedMembers.map((member) => {
-                        const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
+                      {/* Day sub-columns */}
+                      {displayDates.map((date, dIdx) => {
+                        const today = isToday(date);
+                        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                        const memberEvents = getEventsForMemberDate(member.email, date);
+                        const memberAssignments = getAssignmentsForMemberDate(member.id, date);
+                        const statusType = getMemberStatus(member.email, date);
+
                         return (
                           <div
-                            key={`allday-${member.id}-${toISODate(date)}`}
-                            className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5"
+                            key={`${member.id}-${toISODate(date)}`}
+                            className={`flex-1 min-w-0 relative ${
+                              dIdx < displayDates.length - 1 ? 'border-r border-gray-100' : ''
+                            } ${today ? 'bg-blue-50/30' : ''} ${isWeekend ? 'bg-gray-50/50' : ''}`}
                           >
-                            {allDayEvts.map((evt) => (
+                            {/* Current time indicator */}
+                            {today && currentTimePos !== null && (
                               <div
-                                key={evt.id}
-                                className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5"
-                                style={{
-                                  backgroundColor: `${member.color}20`,
-                                  borderLeft: `2px solid ${member.color}`,
-                                  color: member.color,
-                                }}
-                                title={evt.title}
+                                className="absolute left-0 right-0 z-30 pointer-events-none"
+                                style={{ top: `${currentTimePos}px` }}
                               >
-                                {evt.title}
+                                <div className="relative">
+                                  <div className="absolute left-0 w-2 h-2 rounded-full bg-red-500 -translate-y-1/2" />
+                                  <div className="absolute left-0 right-0 h-px bg-red-500" />
+                                </div>
                               </div>
+                            )}
+
+                            {/* Hour grid lines (drop targets) */}
+                            {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => {
+                              const cellKey = `${toISODate(date)}-${member.id}-${hour}`;
+                              const isDragOver = dragOverCell === cellKey;
+                              return (
+                                <div
+                                  key={hour}
+                                  className={`border-b border-gray-100 relative transition-colors ${
+                                    isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
+                                  }`}
+                                  style={{ height: `${HOUR_HEIGHT}px` }}
+                                  onClick={() => handleSlotClick(date, hour, 0, member.id)}
+                                  onDragOver={(e) => handleDragOver(e, date, hour, member.id)}
+                                  onDragLeave={handleDragLeave}
+                                  onDrop={(e) => handleDrop(e, date, hour, member.id)}
+                                >
+                                  {/* Half-hour divider */}
+                                  <div
+                                    className="absolute left-0 right-0 border-b border-gray-50"
+                                    style={{ top: `${HOUR_HEIGHT / 2}px` }}
+                                  />
+                                </div>
+                              );
+                            })}
+
+                            {/* Status overlay (不可/休み/移動) */}
+                            {statusType && (
+                              <StatusOverlay statusType={statusType} totalHeight={gridHeight} />
+                            )}
+
+                            {/* Calendar events */}
+                            {memberEvents.map((event) => (
+                              <EventBlock
+                                key={event.id}
+                                event={event}
+                                hourHeight={HOUR_HEIGHT}
+                                startHour={START_HOUR}
+                                memberColor={member.color}
+                                onClick={onEventClick}
+                              />
+                            ))}
+
+                            {/* Assignment events */}
+                            {memberAssignments.map((assignment) => (
+                              <EventBlock
+                                key={assignment.id}
+                                event={assignment}
+                                hourHeight={HOUR_HEIGHT}
+                                startHour={START_HOUR}
+                                memberColor={member.color}
+                                onClick={onEventClick}
+                              />
                             ))}
                           </div>
                         );
@@ -433,127 +820,9 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </>
+            )}
 
-            {/* Time grid body */}
-            <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
-              {/* Time labels column (sticky left) */}
-              <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-10 bg-white">
-                {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
-                  <div
-                    key={hour}
-                    className="border-b border-gray-100 text-right pr-2 text-[11px] text-gray-400 relative"
-                    style={{ height: `${HOUR_HEIGHT}px` }}
-                  >
-                    <span className="absolute -top-2 right-2">
-                      {String(hour).padStart(2, '0')}:00
-                    </span>
-                    {/* Half-hour tick */}
-                    <span className="absolute right-2 text-[10px] text-gray-300" style={{ top: `${HOUR_HEIGHT / 2 - 6}px` }}>
-                      {String(hour).padStart(2, '0')}:30
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Day columns with member sub-columns */}
-              {displayDates.map((date, dIdx) => {
-                const today = isToday(date);
-                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                const todayInThisColumn = today;
-
-                return (
-                  <div
-                    key={toISODate(date)}
-                    className={`flex-1 min-w-[120px] flex relative ${
-                      dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
-                    } ${today ? 'bg-blue-50/30' : ''} ${isWeekend ? 'bg-gray-50/50' : ''}`}
-                  >
-                    {/* Current time indicator */}
-                    {todayInThisColumn && currentTimePos !== null && (
-                      <div
-                        className="absolute left-0 right-0 z-30 pointer-events-none"
-                        style={{ top: `${currentTimePos}px` }}
-                      >
-                        <div className="relative">
-                          <div className="absolute left-0 w-2 h-2 rounded-full bg-red-500 -translate-y-1/2" />
-                          <div className="absolute left-0 right-0 h-px bg-red-500" />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Member sub-columns */}
-                    {visibleOrderedMembers.map((member, mIdx) => {
-                      const memberEvents = getEventsForMemberDate(member.email, date);
-                      const memberAssignments = getAssignmentsForMemberDate(member.id, date);
-                      const statusType = getMemberStatus(member.email, date);
-
-                      return (
-                        <div
-                          key={`${toISODate(date)}-${member.id}`}
-                          className={`flex-1 min-w-0 relative ${
-                            mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-100' : ''
-                          }`}
-                        >
-                          {/* Hour grid lines (drop targets) */}
-                          {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => {
-                            const cellKey = `${toISODate(date)}-${member.id}-${hour}`;
-                            const isDragOver = dragOverCell === cellKey;
-                            return (
-                              <div
-                                key={hour}
-                                className={`border-b border-gray-100 relative transition-colors ${
-                                  isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
-                                }`}
-                                style={{ height: `${HOUR_HEIGHT}px` }}
-                                onClick={() => handleSlotClick(date, hour, 0, member.id)}
-                                onDragOver={(e) => handleDragOver(e, date, hour, member.id)}
-                                onDragLeave={handleDragLeave}
-                                onDrop={(e) => handleDrop(e, date, hour, member.id)}
-                              >
-                                {/* Half-hour divider */}
-                                <div
-                                  className="absolute left-0 right-0 border-b border-gray-50"
-                                  style={{ top: `${HOUR_HEIGHT / 2}px` }}
-                                />
-                              </div>
-                            );
-                          })}
-
-                          {/* Status overlay (不可/休み/移動) */}
-                          {statusType && (
-                            <StatusOverlay statusType={statusType} totalHeight={gridHeight} />
-                          )}
-
-                          {/* Calendar events */}
-                          {memberEvents.map((event) => (
-                            <EventBlock
-                              key={event.id}
-                              event={event}
-                              hourHeight={HOUR_HEIGHT}
-                              startHour={START_HOUR}
-                              memberColor={member.color}
-                            />
-                          ))}
-
-                          {/* Assignment events */}
-                          {memberAssignments.map((assignment) => (
-                            <EventBlock
-                              key={assignment.id}
-                              event={assignment}
-                              hourHeight={HOUR_HEIGHT}
-                              startHour={START_HOUR}
-                              memberColor={member.color}
-                            />
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import MonthlyView from './components/schedule/MonthlyView';
 import WeeklyView from './components/schedule/WeeklyView';
 import SettingsView from './components/settings/SettingsView';
 import AssignModal from './components/schedule/AssignModal';
+import EventDetailModal from './components/schedule/EventDetailModal';
 
 export default function App() {
   const [activeView, setActiveView] = useState('monthly');
@@ -15,6 +16,10 @@ export default function App() {
   const [selectedOpportunity, setSelectedOpportunity] = useState(null);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assignPresets, setAssignPresets] = useState({});
+
+  // Event detail modal state
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [eventDetailOpen, setEventDetailOpen] = useState(false);
 
   function navigate(view, params = {}) {
     setActiveView(view);
@@ -40,16 +45,27 @@ export default function App() {
     setAssignModalOpen(true);
   }
 
+  // Called when an event block is clicked in WeeklyView or MonthlyView
+  function handleEventClick(event) {
+    setSelectedEvent(event);
+    setEventDetailOpen(true);
+  }
+
+  function handleCloseEventDetail() {
+    setEventDetailOpen(false);
+    setSelectedEvent(null);
+  }
+
   function renderView() {
     switch (activeView) {
       case 'monthly':
-        return <MonthlyView navigate={navigate} currentDate={currentDate} onDropJob={handleDropJob} {...viewParams} />;
+        return <MonthlyView navigate={navigate} currentDate={currentDate} onDropJob={handleDropJob} onEventClick={handleEventClick} {...viewParams} />;
       case 'weekly':
-        return <WeeklyView navigate={navigate} currentDate={currentDate} onDateChange={setCurrentDate} onDropJob={handleDropJob} {...viewParams} />;
+        return <WeeklyView navigate={navigate} currentDate={currentDate} onDateChange={setCurrentDate} onDropJob={handleDropJob} onEventClick={handleEventClick} {...viewParams} />;
       case 'settings':
         return <SettingsView />;
       default:
-        return <MonthlyView navigate={navigate} currentDate={currentDate} {...viewParams} />;
+        return <MonthlyView navigate={navigate} currentDate={currentDate} onEventClick={handleEventClick} {...viewParams} />;
     }
   }
 
@@ -74,6 +90,11 @@ export default function App() {
             preselectedDate={assignPresets.preselectedDate}
             preselectedStartTime={assignPresets.startTime}
             preselectedEndTime={assignPresets.endTime}
+          />
+          <EventDetailModal
+            isOpen={eventDetailOpen}
+            onClose={handleCloseEventDetail}
+            event={selectedEvent}
           />
         </AppProvider>
       </CalendarProvider>

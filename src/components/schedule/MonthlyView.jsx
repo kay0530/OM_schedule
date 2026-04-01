@@ -88,7 +88,7 @@ function groupByWeek(dates) {
 /**
  * Monthly calendar view — Excel-style grid showing all members across weeks.
  */
-export default function MonthlyView({ navigate, currentDate, onDropJob }) {
+export default function MonthlyView({ navigate, currentDate, onDropJob, onEventClick }) {
   const { assignments, settings } = useApp();
   const { events } = useCalendar();
   const showWeekends = settings?.showWeekends ?? false;
@@ -201,13 +201,17 @@ export default function MonthlyView({ navigate, currentDate, onDropJob }) {
         items.push(
           <div
             key={a.id}
-            className="px-1 py-0.5 text-xs rounded truncate"
+            className="px-1 py-0.5 text-xs rounded truncate cursor-pointer hover:opacity-80"
             style={{
               backgroundColor: member.color + '20',
               color: member.color,
               borderLeft: `2px solid ${member.color}`,
             }}
             title={a.title || a.opportunityName || ''}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onEventClick) onEventClick(a);
+            }}
           >
             {a.title || a.opportunityName || '案件'}
           </div>
@@ -221,8 +225,12 @@ export default function MonthlyView({ navigate, currentDate, onDropJob }) {
         items.push(
           <div
             key={ev.id}
-            className="px-1 py-0.5 text-xs text-gray-600 truncate"
+            className="px-1 py-0.5 text-xs text-gray-600 truncate cursor-pointer hover:opacity-80"
             title={title}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onEventClick) onEventClick(ev);
+            }}
           >
             {title}
           </div>
@@ -247,7 +255,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob }) {
         </div>
       );
     },
-    [eventIndex, assignmentIndex]
+    [eventIndex, assignmentIndex, onEventClick]
   );
 
   return (

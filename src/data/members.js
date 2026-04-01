@@ -11,7 +11,7 @@ export const MEMBERS = [
   { id: 'yamazaki_k', nameJa: '山崎', nameEn: 'Yamazaki', email: 'kaito.yamazaki@altenergy.co.jp', color: '#EC4899', role: 'regular' },
   { id: 'ota_t', nameJa: '太田', nameEn: 'Ota', email: 'takahiro.ota@altenergy.co.jp', color: '#EF4444', role: 'regular' },
   { id: 'wano_t', nameJa: '和埜', nameEn: 'Wano', email: 'tatsuto.wano@altenergy.co.jp', color: '#8B5CF6', role: 'regular' },
-  { id: 'seto_r', nameJa: '瀬戸', nameEn: 'Seto', email: 'nstandard.info@gmail.com', color: '#14B8A6', role: 'regular', skipOutlookSync: true }, // Gmail user — calendar shared externally
+  { id: 'seto_r', nameJa: '瀬戸', nameEn: 'Seto', email: 'nstandard.info@gmail.com', color: '#14B8A6', role: 'regular', skipOutlookSync: true }, // Gmail user
   { id: 'tago_s', nameJa: '田子', nameEn: 'Tago', email: 'shoichiro.tago@altenergy.co.jp', color: '#A855F7', role: 'preparation' },
 ];
 
