@@ -67,11 +67,13 @@ export default function JobCard({ opportunity: item, onSelect }) {
   }
 
   return (
-    <button
-      type="button"
-      draggable
+    <div
+      role="button"
+      tabIndex={0}
+      draggable="true"
       onDragStart={handleDragStart}
       onClick={() => onSelect(item)}
+      onKeyDown={(e) => { if (e.key === 'Enter') onSelect(item); }}
       className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:shadow-sm bg-white transition-all cursor-grab active:cursor-grabbing group"
     >
       {/* Name */}
@@ -121,6 +123,6 @@ export default function JobCard({ opportunity: item, onSelect }) {
       {item.address && (
         <p className="text-xs text-gray-400 mt-1 truncate">{item.address}</p>
       )}
-    </button>
+    </div>
   );
 }

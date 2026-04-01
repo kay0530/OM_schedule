@@ -8,6 +8,7 @@ import WeeklyView from './components/schedule/WeeklyView';
 import SettingsView from './components/settings/SettingsView';
 import AssignModal from './components/schedule/AssignModal';
 import EventDetailModal from './components/schedule/EventDetailModal';
+import QuickAddModal from './components/schedule/QuickAddModal';
 
 export default function App() {
   const [activeView, setActiveView] = useState('monthly');
@@ -20,6 +21,10 @@ export default function App() {
   // Event detail modal state
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [eventDetailOpen, setEventDetailOpen] = useState(false);
+
+  // Quick-add modal state (double-click on empty slot)
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddPresets, setQuickAddPresets] = useState({});
 
   function navigate(view, params = {}) {
     setActiveView(view);
@@ -56,12 +61,18 @@ export default function App() {
     setSelectedEvent(null);
   }
 
+  // Called on double-click on empty slot in WeeklyView
+  function handleSlotDoubleClick(date, time, memberId) {
+    setQuickAddPresets({ presetDate: date, presetTime: time, presetMemberId: memberId });
+    setQuickAddOpen(true);
+  }
+
   function renderView() {
     switch (activeView) {
       case 'monthly':
         return <MonthlyView navigate={navigate} currentDate={currentDate} onDropJob={handleDropJob} onEventClick={handleEventClick} {...viewParams} />;
       case 'weekly':
-        return <WeeklyView navigate={navigate} currentDate={currentDate} onDateChange={setCurrentDate} onDropJob={handleDropJob} onEventClick={handleEventClick} {...viewParams} />;
+        return <WeeklyView navigate={navigate} currentDate={currentDate} onDateChange={setCurrentDate} onDropJob={handleDropJob} onEventClick={handleEventClick} onSlotDoubleClick={handleSlotDoubleClick} {...viewParams} />;
       case 'settings':
         return <SettingsView />;
       default:
@@ -95,6 +106,13 @@ export default function App() {
             isOpen={eventDetailOpen}
             onClose={handleCloseEventDetail}
             event={selectedEvent}
+          />
+          <QuickAddModal
+            isOpen={quickAddOpen}
+            onClose={() => setQuickAddOpen(false)}
+            presetDate={quickAddPresets.presetDate}
+            presetTime={quickAddPresets.presetTime}
+            presetMemberId={quickAddPresets.presetMemberId}
           />
         </AppProvider>
       </CalendarProvider>
