@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useReducer, useEffect } from 'react';
+import { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import { isFirestoreEnabled, saveAssignments, loadAssignments, subscribeAssignments } from '../services/firestoreService';
 
 const AppContext = createContext(null);
 
@@ -77,6 +78,9 @@ function appReducer(state, action) {
         settings: { ...state.settings, ...action.payload },
       };
 
+    case 'SET_ASSIGNMENTS':
+      return { ...state, assignments: action.payload };
+
     default:
       console.warn(`Unknown action type: ${action.type}`);
       return state;
@@ -85,8 +89,30 @@ function appReducer(state, action) {
 
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(appReducer, null, loadInitialState);
+  const fromFirestoreRef = useRef(false);
 
-  // Persist assignments to localStorage
+  // Load from Firestore on mount and subscribe to real-time updates
+  useEffect(() => {
+    if (!isFirestoreEnabled()) return;
+
+    // Initial load from Firestore
+    loadAssignments().then((firestoreAssignments) => {
+      if (firestoreAssignments) {
+        fromFirestoreRef.current = true;
+        dispatch({ type: 'SET_ASSIGNMENTS', payload: firestoreAssignments });
+      }
+    });
+
+    // Subscribe to real-time updates
+    const unsubscribe = subscribeAssignments((firestoreAssignments) => {
+      fromFirestoreRef.current = true;
+      dispatch({ type: 'SET_ASSIGNMENTS', payload: firestoreAssignments });
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Persist assignments to localStorage and Firestore
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -96,6 +122,12 @@ export function AppProvider({ children }) {
     } catch {
       // Ignore quota errors
     }
+
+    if (fromFirestoreRef.current) {
+      fromFirestoreRef.current = false;
+      return; // Don't save back to Firestore
+    }
+    saveAssignments(state.assignments);
   }, [state.assignments]);
 
   // Persist settings to localStorage
