@@ -47,7 +47,7 @@ function detectStatusType(title) {
  * Shows days of the week as columns, 30-minute time slots as rows,
  * with member filter chips and events positioned by time.
  */
-export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick }) {
+export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onSlotDoubleClick }) {
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
 
@@ -290,10 +290,12 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     });
   }, [dispatch]);
 
-  // Handle click on empty slot
-  function handleSlotClick(date, hour, minute, memberId) {
+  // Handle double-click on empty slot to quick-add
+  function handleSlotDoubleClick(date, hour, minute, memberId) {
     const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-    console.log(`Slot clicked: ${toISODate(date)} ${timeStr} member=${memberId}`);
+    if (onSlotDoubleClick) {
+      onSlotDoubleClick(toISODate(date), timeStr, memberId);
+    }
   }
 
   // Total grid height
@@ -596,7 +598,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                       isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
                                     }`}
                                     style={{ height: `${HOUR_HEIGHT}px` }}
-                                    onClick={() => handleSlotClick(date, hour, 0, member.id)}
+                                    onDoubleClick={() => handleSlotDoubleClick(date, hour, 0, member.id)}
                                     onDragOver={(e) => handleDragOver(e, date, hour, member.id)}
                                     onDragLeave={handleDragLeave}
                                     onDrop={(e) => handleDrop(e, date, hour, member.id)}
@@ -813,7 +815,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                     isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
                                   }`}
                                   style={{ height: `${HOUR_HEIGHT}px` }}
-                                  onClick={() => handleSlotClick(date, hour, 0, member.id)}
+                                  onDoubleClick={() => handleSlotDoubleClick(date, hour, 0, member.id)}
                                   onDragOver={(e) => handleDragOver(e, date, hour, member.id)}
                                   onDragLeave={handleDragLeave}
                                   onDrop={(e) => handleDrop(e, date, hour, member.id)}
