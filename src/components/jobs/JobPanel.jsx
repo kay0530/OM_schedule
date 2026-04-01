@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import opportunities from '../../data/opportunities.json';
 import maintenances from '../../data/maintenances.json';
 import JobCard, { STAGE_COLORS, MAINT_STATUS_COLORS } from './JobCard';
@@ -6,11 +6,35 @@ import JobCard, { STAGE_COLORS, MAINT_STATUS_COLORS } from './JobCard';
 /**
  * Sidebar panel listing Salesforce records.
  * Two tabs: レンタル商談 (opportunities) and 点検／修繕 (maintenance).
- * Supports text search, stage/status filtering, and collapsing.
+ * Supports text search, stage/status filtering, collapsing,
+ * and saving/loading filter presets via localStorage.
  */
 
 const ALL_STAGES = [...new Set(opportunities.map((o) => o.stage))].filter(Boolean).sort();
 const ALL_MAINT_STATUSES = [...new Set(maintenances.map((m) => m.status))].filter(Boolean).sort();
+
+const PRESETS_STORAGE_KEY = 'construction-schedule-filter-presets';
+const LAST_FILTER_STORAGE_KEY = 'construction-schedule-last-filter';
+
+function loadPresets() {
+  try {
+    return JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY)) || [];
+  } catch { return []; }
+}
+
+function savePresets(presets) {
+  localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+}
+
+function loadLastFilter() {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_FILTER_STORAGE_KEY));
+  } catch { return null; }
+}
+
+function saveLastFilter(filter) {
+  localStorage.setItem(LAST_FILTER_STORAGE_KEY, JSON.stringify(filter));
+}
 
 const TABS = [
   { id: 'opportunity', label: 'レンタル商談', count: opportunities.length },
@@ -19,10 +43,36 @@ const TABS = [
 
 export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle }) {
   const collapsed = !isOpen;
-  const [activeTab, setActiveTab] = useState('opportunity');
+
+  // Restore last filter from localStorage on initial render
+  const lastFilter = useMemo(() => loadLastFilter(), []);
+
+  const [activeTab, setActiveTab] = useState(lastFilter?.tab || 'opportunity');
   const [searchText, setSearchText] = useState('');
-  const [activeStages, setActiveStages] = useState(new Set(ALL_STAGES));
-  const [activeStatuses, setActiveStatuses] = useState(new Set(ALL_MAINT_STATUSES));
+  const [activeStages, setActiveStages] = useState(() => {
+    if (lastFilter?.tab === 'opportunity' && lastFilter?.filters) {
+      return new Set(lastFilter.filters);
+    }
+    return new Set(ALL_STAGES);
+  });
+  const [activeStatuses, setActiveStatuses] = useState(() => {
+    if (lastFilter?.tab === 'maintenance' && lastFilter?.filters) {
+      return new Set(lastFilter.filters);
+    }
+    return new Set(ALL_MAINT_STATUSES);
+  });
+
+  const [presets, setPresets] = useState(loadPresets);
+  const [showPresetForm, setShowPresetForm] = useState(false);
+  const [presetName, setPresetName] = useState('');
+
+  // Auto-save last used filter whenever tab or filters change
+  useEffect(() => {
+    const filters = activeTab === 'opportunity'
+      ? [...activeStages]
+      : [...activeStatuses];
+    saveLastFilter({ tab: activeTab, filters });
+  }, [activeTab, activeStages, activeStatuses]);
 
   function toggleFilter(set, setter, allItems, value) {
     setter((prev) => {
@@ -37,6 +87,39 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     if (set.size === allItems.length) setter(new Set());
     else setter(new Set(allItems));
   }
+
+  const handleSavePreset = useCallback(() => {
+    if (!presetName.trim()) return;
+    const filters = activeTab === 'opportunity'
+      ? [...activeStages]
+      : [...activeStatuses];
+    const newPreset = {
+      id: 'preset_' + Date.now(),
+      name: presetName.trim(),
+      tab: activeTab,
+      filters,
+    };
+    const updated = [...presets, newPreset];
+    setPresets(updated);
+    savePresets(updated);
+    setPresetName('');
+    setShowPresetForm(false);
+  }, [presetName, activeTab, activeStages, activeStatuses, presets]);
+
+  const handleApplyPreset = useCallback((preset) => {
+    setActiveTab(preset.tab);
+    if (preset.tab === 'opportunity') {
+      setActiveStages(new Set(preset.filters));
+    } else {
+      setActiveStatuses(new Set(preset.filters));
+    }
+  }, []);
+
+  const handleDeletePreset = useCallback((presetId) => {
+    const updated = presets.filter((p) => p.id !== presetId);
+    setPresets(updated);
+    savePresets(updated);
+  }, [presets]);
 
   // Filtered opportunities
   const filteredOpps = useMemo(() => {
@@ -153,14 +236,50 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
 
       {/* Filter chips */}
       <div className="px-3 py-2 border-b border-gray-100">
-        <div className="flex items-center gap-1 mb-1">
+        <div className="flex items-center gap-2 mb-1">
           <button
             onClick={() => toggleAll(activeFilterSet, activeTab === 'opportunity' ? setActiveStages : setActiveStatuses, allFilterItems)}
             className="text-xs text-blue-600 hover:text-blue-800 font-medium"
           >
             {activeFilterSet.size === allFilterItems.length ? '全解除' : '全選択'}
           </button>
+          <span className="text-gray-300">|</span>
+          <button
+            onClick={() => setShowPresetForm((v) => !v)}
+            className="text-xs text-emerald-600 hover:text-emerald-800 font-medium"
+          >
+            保存
+          </button>
         </div>
+
+        {/* Inline preset save form */}
+        {showPresetForm && (
+          <div className="flex items-center gap-1 mb-1.5">
+            <input
+              type="text"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSavePreset(); if (e.key === 'Escape') setShowPresetForm(false); }}
+              placeholder="プリセット名を入力..."
+              className="flex-1 text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              autoFocus
+            />
+            <button
+              onClick={handleSavePreset}
+              disabled={!presetName.trim()}
+              className="text-xs px-2 py-1 bg-emerald-500 text-white rounded hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              保存
+            </button>
+            <button
+              onClick={() => { setShowPresetForm(false); setPresetName(''); }}
+              className="text-xs px-1.5 py-1 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
           {allFilterItems.map((item) => {
             const isActive = activeFilterSet.has(item);
@@ -187,6 +306,34 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
           })}
         </div>
       </div>
+
+      {/* Saved filter presets */}
+      {presets.length > 0 && (
+        <div className="px-3 py-2 border-b border-gray-100">
+          <div className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+            <span>📌</span>
+            <span>保存済みフィルター</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {presets.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => handleApplyPreset(preset)}
+                className="group inline-flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full border border-dashed border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100 transition font-medium"
+                title={`${preset.tab === 'opportunity' ? 'レンタル商談' : '点検／修繕'}: ${preset.filters.length}件のフィルター`}
+              >
+                <span>{preset.name}</span>
+                <span
+                  onClick={(e) => { e.stopPropagation(); handleDeletePreset(preset.id); }}
+                  className="ml-0.5 text-amber-400 hover:text-red-500 cursor-pointer"
+                >
+                  ×
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Scrollable list */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4">

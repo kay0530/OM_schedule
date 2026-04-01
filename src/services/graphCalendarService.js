@@ -167,6 +167,85 @@ export async function fetchAllMembersCalendarEvents(accessToken, members, startD
  * @param {Object} eventData - MS365-compatible event body
  * @returns {Promise<{success:boolean, data:Object|null, error:string|null}>}
  */
+/**
+ * Make an authenticated PATCH request to Microsoft Graph API.
+ * @param {string} url
+ * @param {string} accessToken
+ * @param {Object} body
+ * @returns {Promise<Object>}
+ */
+async function graphPatch(url, accessToken, body) {
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errorBody = await res.text();
+    throw new Error(`Graph API error ${res.status}: ${errorBody}`);
+  }
+  return res.json();
+}
+
+/**
+ * Make an authenticated DELETE request to Microsoft Graph API.
+ * @param {string} url
+ * @param {string} accessToken
+ * @returns {Promise<void>}
+ */
+async function graphDelete(url, accessToken) {
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) {
+    const errorBody = await res.text();
+    throw new Error(`Graph API error ${res.status}: ${errorBody}`);
+  }
+}
+
+/**
+ * Update a calendar event for a member.
+ * @param {string} accessToken
+ * @param {string} memberEmail
+ * @param {string} eventId
+ * @param {Object} updates - { subject, start: { dateTime, timeZone }, end: { dateTime, timeZone } }
+ * @returns {Promise<{success:boolean, data:Object|null, error:string|null}>}
+ */
+export async function updateCalendarEvent(accessToken, memberEmail, eventId, updates) {
+  try {
+    const url = `${GRAPH_BASE_URL}/users/${memberEmail}/events/${eventId}`;
+    const data = await graphPatch(url, accessToken, updates);
+    return { success: true, data, error: null };
+  } catch (err) {
+    console.error(`Failed to update event ${eventId} for ${memberEmail}:`, err);
+    return { success: false, data: null, error: err.message };
+  }
+}
+
+/**
+ * Delete a calendar event for a member.
+ * @param {string} accessToken
+ * @param {string} memberEmail
+ * @param {string} eventId
+ * @returns {Promise<{success:boolean, error:string|null}>}
+ */
+export async function deleteCalendarEvent(accessToken, memberEmail, eventId) {
+  try {
+    const url = `${GRAPH_BASE_URL}/users/${memberEmail}/events/${eventId}`;
+    await graphDelete(url, accessToken);
+    return { success: true, error: null };
+  } catch (err) {
+    console.error(`Failed to delete event ${eventId} for ${memberEmail}:`, err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function createCalendarEvent(accessToken, memberEmail, eventData) {
   try {
     const url = `${GRAPH_BASE_URL}/users/${memberEmail}/events`;

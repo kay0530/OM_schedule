@@ -7,7 +7,7 @@ import { timeStringToMinutes } from '../../utils/dateUtils';
  *
  * @param {{ event: object, hourHeight: number, startHour: number, memberColor?: string }}
  */
-export default function EventBlock({ event, hourHeight, startHour, memberColor }) {
+export default function EventBlock({ event, hourHeight, startHour, memberColor, onClick }) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   // All-day events are rendered separately
@@ -59,6 +59,10 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor }
         backgroundColor: bgColor,
         borderLeft: `3px solid ${borderColor}`,
         zIndex: showTooltip ? 20 : 10,
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onClick) onClick(event);
       }}
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
