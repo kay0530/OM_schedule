@@ -225,7 +225,6 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
 
   function handleDragOver(e, date, hour, memberId) {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
     const cellKey = `${toISODate(date)}-${memberId}-${hour}`;
     setDragOverCell(cellKey);
   }
