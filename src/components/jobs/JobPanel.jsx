@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import opportunities from '../../data/opportunities.json';
 import maintenances from '../../data/maintenances.json';
 import JobCard, { STAGE_COLORS, MAINT_STATUS_COLORS } from './JobCard';
+import { isFirestoreEnabled, saveFilterPresets, loadFilterPresets, subscribeFilterPresets } from '../../services/firestoreService';
 
 /**
  * Sidebar panel listing Salesforce records.
@@ -65,6 +66,39 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
   const [presets, setPresets] = useState(loadPresets);
   const [showPresetForm, setShowPresetForm] = useState(false);
   const [presetName, setPresetName] = useState('');
+  const fromFirestoreRef = useRef(false);
+
+  // Load from Firestore on mount and subscribe to real-time updates
+  useEffect(() => {
+    if (!isFirestoreEnabled()) return;
+
+    // Initial load from Firestore (overrides localStorage)
+    loadFilterPresets().then((firestorePresets) => {
+      if (firestorePresets) {
+        fromFirestoreRef.current = true;
+        setPresets(firestorePresets);
+      }
+    });
+
+    // Subscribe to real-time updates
+    const unsubscribe = subscribeFilterPresets((firestorePresets) => {
+      fromFirestoreRef.current = true;
+      setPresets(firestorePresets);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Sync presets to localStorage and Firestore on change
+  useEffect(() => {
+    savePresets(presets);
+
+    if (fromFirestoreRef.current) {
+      fromFirestoreRef.current = false;
+      return; // Don't save back to Firestore when update came from Firestore
+    }
+    saveFilterPresets(presets);
+  }, [presets]);
 
   // Auto-save last used filter whenever tab or filters change
   useEffect(() => {
@@ -101,7 +135,6 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     };
     const updated = [...presets, newPreset];
     setPresets(updated);
-    savePresets(updated);
     setPresetName('');
     setShowPresetForm(false);
   }, [presetName, activeTab, activeStages, activeStatuses, presets]);
@@ -118,7 +151,6 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
   const handleDeletePreset = useCallback((presetId) => {
     const updated = presets.filter((p) => p.id !== presetId);
     setPresets(updated);
-    savePresets(updated);
   }, [presets]);
 
   // Filtered opportunities
