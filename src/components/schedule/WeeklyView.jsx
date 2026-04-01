@@ -49,7 +49,7 @@ function detectStatusType(title) {
  */
 export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick }) {
   const { events, loading } = useCalendar();
-  const { assignments, settings } = useApp();
+  const { assignments, settings, dispatch } = useApp();
 
   const scrollRef = useRef(null);
   const hasAutoScrolled = useRef(false);
@@ -225,7 +225,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
 
   function handleDragOver(e, date, hour, memberId) {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
+    e.dataTransfer.dropEffect = 'move';
     const cellKey = `${toISODate(date)}-${memberId}-${hour}`;
     setDragOverCell(cellKey);
   }
@@ -238,17 +238,57 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     e.preventDefault();
     setDragOverCell(null);
     try {
-      const jobData = JSON.parse(e.dataTransfer.getData('application/json'));
+      const rawData = JSON.parse(e.dataTransfer.getData('application/json'));
+
+      // Check if this is an event-move operation (dragging existing assignment)
+      if (rawData.type === 'event-move') {
+        const { eventId, durationMinutes, event: originalEvent } = rawData;
+        const newDate = toISODate(date);
+        const newStartTime = `${String(hour).padStart(2, '0')}:00`;
+        const newEndMinutes = hour * 60 + durationMinutes;
+        const clampedEnd = Math.min(newEndMinutes, END_HOUR * 60);
+        const newEndHour = Math.floor(clampedEnd / 60);
+        const newEndMin = clampedEnd % 60;
+        const newEndTime = `${String(newEndHour).padStart(2, '0')}:${String(newEndMin).padStart(2, '0')}`;
+
+        const targetMember = MEMBERS.find((m) => m.id === memberId);
+        dispatch({
+          type: 'UPDATE_ASSIGNMENT',
+          payload: {
+            id: eventId,
+            date: newDate,
+            startTime: newStartTime,
+            endTime: newEndTime,
+            memberId: memberId,
+            memberEmail: targetMember?.email || originalEvent?.memberEmail,
+          },
+        });
+        return;
+      }
+
+      // Default: dropping a JobCard from sidebar
       const startTime = `${String(hour).padStart(2, '0')}:00`;
       const endHour = Math.min(hour + 1, END_HOUR);
       const endTime = `${String(endHour).padStart(2, '0')}:00`;
       if (onDropJob) {
-        onDropJob(jobData, toISODate(date), memberId, startTime, endTime);
+        onDropJob(rawData, toISODate(date), memberId, startTime, endTime);
       }
     } catch {
       // Invalid drag data
     }
   }
+
+  // Handle resize end from EventBlock
+  const handleResizeEnd = useCallback((event, newEndTime) => {
+    if (!event.opportunityName) return; // Only assignments
+    dispatch({
+      type: 'UPDATE_ASSIGNMENT',
+      payload: {
+        id: event.id,
+        endTime: newEndTime,
+      },
+    });
+  }, [dispatch]);
 
   // Handle click on empty slot
   function handleSlotClick(date, hour, minute, memberId) {
@@ -596,6 +636,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                   startHour={START_HOUR}
                                   memberColor={member.color}
                                   onClick={onEventClick}
+                                  onResizeEnd={handleResizeEnd}
                                 />
                               ))}
                             </div>
@@ -812,6 +853,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 startHour={START_HOUR}
                                 memberColor={member.color}
                                 onClick={onEventClick}
+                                onResizeEnd={handleResizeEnd}
                               />
                             ))}
                           </div>

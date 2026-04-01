@@ -103,40 +103,46 @@ export default function AssignModal({
       dispatch({ type: 'ADD_ASSIGNMENT', payload: assignmentPayload });
 
       // Create Outlook event if checked and authenticated
-      if (syncOutlook && isAuthenticated && member && !member.skipOutlookSync) {
-        try {
-          const token = await getToken();
-          if (token) {
-            const eventData = {
-              subject: opportunity.name,
-              start: {
-                dateTime: `${date}T${startTime}:00`,
-                timeZone: 'Asia/Tokyo',
-              },
-              end: {
-                dateTime: `${date}T${endTime}:00`,
-                timeZone: 'Asia/Tokyo',
-              },
-              location: {
-                displayName: opportunity.address || '',
-              },
-              body: {
-                contentType: 'Text',
-                content: opportunity.scheduleMemo || opportunity.content || '',
-              },
-            };
-            const result = await createCalendarEvent(token, member.email, eventData);
-            outlookResults.push({ member: member.nameJa, success: result.success, error: result.error });
+      if (syncOutlook && member && !member.skipOutlookSync) {
+        if (!isAuthenticated) {
+          outlookResults.push({ member: member.nameJa, success: false, error: 'MS365未ログイン' });
+        } else {
+          try {
+            const token = await getToken();
+            if (!token) {
+              outlookResults.push({ member: member.nameJa, success: false, error: 'トークン取得失敗' });
+            } else {
+              const eventData = {
+                subject: opportunity.name,
+                start: {
+                  dateTime: `${date}T${startTime}:00`,
+                  timeZone: 'Asia/Tokyo',
+                },
+                end: {
+                  dateTime: `${date}T${endTime}:00`,
+                  timeZone: 'Asia/Tokyo',
+                },
+                location: {
+                  displayName: opportunity.address || '',
+                },
+                body: {
+                  contentType: 'Text',
+                  content: opportunity.scheduleMemo || opportunity.content || '',
+                },
+              };
+              const result = await createCalendarEvent(token, member.email, eventData);
+              outlookResults.push({ member: member.nameJa, success: result.success, error: result.error });
+            }
+          } catch (err) {
+            outlookResults.push({ member: member.nameJa, success: false, error: err.message });
           }
-        } catch (err) {
-          outlookResults.push({ member: member.nameJa, success: false, error: err.message });
         }
       }
     }
 
     setSaving(false);
 
-    // Show Outlook sync results
+    // Show results
     if (outlookResults.length > 0) {
       const successes = outlookResults.filter((r) => r.success).length;
       const failures = outlookResults.filter((r) => !r.success);
@@ -146,6 +152,10 @@ export default function AssignModal({
         const failNames = failures.map((f) => `${f.member}: ${f.error}`).join('\n');
         alert(`割り当て完了。Outlook: ${successes}件成功、${failures.length}件失敗\n${failNames}`);
       }
+    } else if (syncOutlook) {
+      alert('割り当て完了。（Outlook登録対象のメンバーがいませんでした）');
+    } else {
+      alert('割り当て完了。');
     }
 
     onClose();

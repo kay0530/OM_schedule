@@ -248,16 +248,16 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+          className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden max-h-[80vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header with colored top bar */}
           <div
-            className="h-2"
+            className="h-2 shrink-0"
             style={{ backgroundColor: member?.color || '#6B7280' }}
           />
 
-          <div className="px-6 py-4">
+          <div className="px-6 py-4 overflow-y-auto" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
             {/* Title & close */}
             <div className="flex items-start justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-800 leading-tight pr-4">
