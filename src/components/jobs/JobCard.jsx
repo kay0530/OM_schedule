@@ -64,6 +64,21 @@ export default function JobCard({ opportunity: item, onSelect }) {
   function handleDragStart(e) {
     e.dataTransfer.setData('application/json', JSON.stringify(item));
     e.dataTransfer.effectAllowed = 'copy';
+    // Hide the panel during drag so drop targets underneath are reachable
+    const panel = e.target.closest('aside');
+    if (panel) {
+      panel.style.pointerEvents = 'none';
+      panel.style.opacity = '0.3';
+    }
+  }
+
+  function handleDragEnd(e) {
+    // Restore the panel after drag
+    const panel = document.querySelector('aside[class*="fixed right-0"]');
+    if (panel) {
+      panel.style.pointerEvents = '';
+      panel.style.opacity = '';
+    }
   }
 
   return (
@@ -72,6 +87,7 @@ export default function JobCard({ opportunity: item, onSelect }) {
       tabIndex={0}
       draggable="true"
       onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onClick={() => onSelect(item)}
       onKeyDown={(e) => { if (e.key === 'Enter') onSelect(item); }}
       className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:shadow-sm bg-white transition-all cursor-grab active:cursor-grabbing group"
