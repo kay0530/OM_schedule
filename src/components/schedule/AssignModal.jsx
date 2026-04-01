@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { createCalendarEvent } from '../../services/graphCalendarService';
 
 /**
  * Modal dialog for assigning a job (opportunity or maintenance) to member(s).
@@ -26,8 +28,10 @@ export default function AssignModal({
   preselectedEndTime,
 }) {
   const { dispatch } = useApp();
+  const { isAuthenticated, getToken } = useAuth();
 
   const [selectedMembers, setSelectedMembers] = useState([]);
+  const [saving, setSaving] = useState(false);
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
@@ -58,7 +62,7 @@ export default function AssignModal({
     );
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
 
     if (selectedMembers.length === 0) {
@@ -70,29 +74,78 @@ export default function AssignModal({
       return;
     }
 
+    setSaving(true);
+
     // Build payload based on record type
     const isMaint = opportunity.type === 'maintenance';
+    const outlookResults = [];
+
     for (const memberId of selectedMembers) {
-      dispatch({
-        type: 'ADD_ASSIGNMENT',
-        payload: {
-          sourceType: opportunity.type || 'opportunity',
-          opportunityId: opportunity.id,
-          opportunityName: opportunity.name,
-          accountName: isMaint ? null : opportunity.accountName,
-          summary: isMaint ? opportunity.summary : null,
-          category: opportunity.category || null,
-          status: isMaint ? opportunity.status : opportunity.stage,
-          memberId,
-          date,
-          startTime,
-          endTime,
-          syncOutlook,
-          stage: isMaint ? null : opportunity.stage,
-          address: opportunity.address,
-          scheduleMemo: isMaint ? opportunity.content : opportunity.scheduleMemo,
-        },
-      });
+      const member = MEMBERS.find((m) => m.id === memberId);
+      const assignmentPayload = {
+        sourceType: opportunity.type || 'opportunity',
+        opportunityId: opportunity.id,
+        opportunityName: opportunity.name,
+        accountName: isMaint ? null : opportunity.accountName,
+        summary: isMaint ? opportunity.summary : null,
+        category: opportunity.category || null,
+        status: isMaint ? opportunity.status : opportunity.stage,
+        memberId,
+        date,
+        startTime,
+        endTime,
+        syncOutlook,
+        stage: isMaint ? null : opportunity.stage,
+        address: opportunity.address,
+        scheduleMemo: isMaint ? opportunity.content : opportunity.scheduleMemo,
+      };
+
+      dispatch({ type: 'ADD_ASSIGNMENT', payload: assignmentPayload });
+
+      // Create Outlook event if checked and authenticated
+      if (syncOutlook && isAuthenticated && member && !member.skipOutlookSync) {
+        try {
+          const token = await getToken();
+          if (token) {
+            const eventData = {
+              subject: opportunity.name,
+              start: {
+                dateTime: `${date}T${startTime}:00`,
+                timeZone: 'Asia/Tokyo',
+              },
+              end: {
+                dateTime: `${date}T${endTime}:00`,
+                timeZone: 'Asia/Tokyo',
+              },
+              location: {
+                displayName: opportunity.address || '',
+              },
+              body: {
+                contentType: 'Text',
+                content: opportunity.scheduleMemo || opportunity.content || '',
+              },
+            };
+            const result = await createCalendarEvent(token, member.email, eventData);
+            outlookResults.push({ member: member.nameJa, success: result.success, error: result.error });
+          }
+        } catch (err) {
+          outlookResults.push({ member: member.nameJa, success: false, error: err.message });
+        }
+      }
+    }
+
+    setSaving(false);
+
+    // Show Outlook sync results
+    if (outlookResults.length > 0) {
+      const successes = outlookResults.filter((r) => r.success).length;
+      const failures = outlookResults.filter((r) => !r.success);
+      if (failures.length === 0) {
+        alert(`割り当て完了。Outlook予定を${successes}件作成しました。`);
+      } else {
+        const failNames = failures.map((f) => `${f.member}: ${f.error}`).join('\n');
+        alert(`割り当て完了。Outlook: ${successes}件成功、${failures.length}件失敗\n${failNames}`);
+      }
     }
 
     onClose();
@@ -257,9 +310,12 @@ export default function AssignModal({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition font-medium"
+                disabled={saving}
+                className={`px-5 py-2 text-sm text-white rounded-lg transition font-medium ${
+                  saving ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                割り当てる
+                {saving ? '保存中...' : '割り当てる'}
               </button>
             </div>
           </form>
