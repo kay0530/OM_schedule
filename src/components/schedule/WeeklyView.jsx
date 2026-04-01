@@ -309,7 +309,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
   const gridHeight = TOTAL_HOURS * HOUR_HEIGHT;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
       {/* Header: navigation + week label */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-4">
