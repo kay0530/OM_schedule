@@ -261,7 +261,19 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             {/* Title & close */}
             <div className="flex items-start justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-800 leading-tight pr-4">
-                {editMode ? '予定を編集' : (event.opportunityName || event.title || event.statusLabel || 'イベント詳細')}
+                {editMode ? '予定を編集' : (
+                  event.opportunityId ? (
+                    <a
+                      href={`https://altenergy.lightning.force.com/lightning/r/${event.sourceType === 'maintenance' ? 'Maintenance__c' : 'Opportunity'}/${event.opportunityId}/view`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline text-blue-700"
+                      title="Salesforceで開く"
+                    >
+                      {event.opportunityName || event.title || 'イベント詳細'}
+                    </a>
+                  ) : (event.opportunityName || event.title || event.statusLabel || 'イベント詳細')
+                )}
               </h2>
               <button
                 onClick={onClose}

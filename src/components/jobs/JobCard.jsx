@@ -91,9 +91,18 @@ export default function JobCard({ opportunity: item, onSelect }) {
       onKeyDown={(e) => { if (e.key === 'Enter') onSelect(item); }}
       className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:shadow-sm bg-white transition-all cursor-grab active:cursor-grabbing group"
     >
-      {/* Name */}
+      {/* Name with Salesforce link */}
       <p className="font-semibold text-sm text-gray-900 truncate group-hover:text-blue-700">
-        {item.name}
+        <a
+          href={`https://altenergy.lightning.force.com/lightning/r/${item.type === 'maintenance' ? 'Maintenance__c' : 'Opportunity'}/${item.id}/view`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="hover:underline"
+          title="Salesforceで開く"
+        >
+          {item.name}
+        </a>
       </p>
 
       {/* Summary or Account name */}
