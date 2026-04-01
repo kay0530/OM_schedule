@@ -47,7 +47,7 @@ function detectStatusType(title) {
  * Shows days of the week as columns, 30-minute time slots as rows,
  * with member filter chips and events positioned by time.
  */
-export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onSlotDoubleClick }) {
+export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onSlotClick, onSlotDoubleClick }) {
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
 
@@ -289,6 +289,14 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       },
     });
   }, [dispatch]);
+
+  // Handle single click on empty slot (place picked job)
+  function handleSlotSingleClick(date, hour, minute, memberId) {
+    const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    if (onSlotClick) {
+      onSlotClick(toISODate(date), timeStr, memberId);
+    }
+  }
 
   // Handle double-click on empty slot to quick-add
   function handleSlotDoubleClick(date, hour, minute, memberId) {
@@ -598,6 +606,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                       isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
                                     }`}
                                     style={{ height: `${HOUR_HEIGHT}px` }}
+                                    onClick={() => handleSlotSingleClick(date, hour, 0, member.id)}
                                     onDoubleClick={() => handleSlotDoubleClick(date, hour, 0, member.id)}
                                     onDragOver={(e) => handleDragOver(e, date, hour, member.id)}
                                     onDragLeave={handleDragLeave}
@@ -815,7 +824,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                     isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
                                   }`}
                                   style={{ height: `${HOUR_HEIGHT}px` }}
-                                  onDoubleClick={() => handleSlotDoubleClick(date, hour, 0, member.id)}
+                                  onClick={() => handleSlotSingleClick(date, hour, 0, member.id)}
+                                    onDoubleClick={() => handleSlotDoubleClick(date, hour, 0, member.id)}
                                   onDragOver={(e) => handleDragOver(e, date, hour, member.id)}
                                   onDragLeave={handleDragLeave}
                                   onDrop={(e) => handleDrop(e, date, hour, member.id)}
