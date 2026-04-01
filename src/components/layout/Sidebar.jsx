@@ -30,7 +30,7 @@ const NAV_ITEMS = [
   },
 ];
 
-export default function Sidebar({ activeView, onNavigate, isOpen, onClose }) {
+export default function Sidebar({ activeView, onNavigate, isOpen, collapsed, onClose, onToggleCollapse }) {
   return (
     <>
       {/* Mobile overlay */}
@@ -42,11 +42,11 @@ export default function Sidebar({ activeView, onNavigate, isOpen, onClose }) {
       )}
 
       <aside
-        className={`fixed top-14 left-0 bottom-0 w-60 bg-white border-r border-gray-200 z-40 transform transition-transform duration-200 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0`}
+        className={`fixed top-14 left-0 bottom-0 bg-white border-r border-gray-200 z-40 transform transition-all duration-200 ${
+          collapsed ? 'w-14' : 'w-60'
+        } ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
       >
-        <nav className="p-3 space-y-1">
+        <nav className={`p-2 space-y-1 ${collapsed ? 'px-1.5' : 'p-3'}`}>
           {NAV_ITEMS.map((item) => (
             <button
               key={item.key}
@@ -54,7 +54,10 @@ export default function Sidebar({ activeView, onNavigate, isOpen, onClose }) {
                 onNavigate(item.key);
                 onClose();
               }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              title={collapsed ? item.label : undefined}
+              className={`w-full flex items-center gap-3 rounded-lg text-sm font-medium transition-colors ${
+                collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5'
+              } ${
                 activeView === item.key
                   ? 'bg-orange-50 text-orange-700'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
@@ -63,10 +66,21 @@ export default function Sidebar({ activeView, onNavigate, isOpen, onClose }) {
               <span className={activeView === item.key ? 'text-orange-600' : 'text-gray-400'}>
                 {item.icon}
               </span>
-              {item.label}
+              {!collapsed && item.label}
             </button>
           ))}
         </nav>
+
+        {/* Collapse toggle button (desktop only) */}
+        <button
+          onClick={onToggleCollapse}
+          className="hidden lg:flex absolute bottom-4 left-0 right-0 justify-center p-2 text-gray-400 hover:text-gray-600 transition-colors"
+          title={collapsed ? 'サイドバーを展開' : 'サイドバーを折り畳む'}
+        >
+          <svg className={`w-4 h-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+          </svg>
+        </button>
       </aside>
     </>
   );
