@@ -132,6 +132,7 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
   return (
     <div
       ref={blockRef}
+      data-event-block="true"
       className={`absolute left-0.5 right-0.5 rounded overflow-hidden cursor-pointer transition-shadow hover:shadow-md ${
         isResizing ? 'opacity-80 shadow-lg' : ''
       } ${isDraggable ? 'select-none' : ''}`}

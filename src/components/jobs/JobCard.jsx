@@ -63,22 +63,30 @@ export default function JobCard({ opportunity: item, onSelect }) {
 
   function handleDragStart(e) {
     e.dataTransfer.setData('application/json', JSON.stringify(item));
-    e.dataTransfer.effectAllowed = 'copy';
-    // Hide the panel during drag so drop targets underneath are reachable
+    e.dataTransfer.effectAllowed = 'copyMove';
+    // Hide the panel and disable EventBlocks during drag
     const panel = e.target.closest('aside');
     if (panel) {
       panel.style.pointerEvents = 'none';
       panel.style.opacity = '0.3';
     }
+    // Disable pointer-events on all EventBlocks so drops reach slot divs
+    document.querySelectorAll('[data-event-block]').forEach((el) => {
+      el.style.pointerEvents = 'none';
+    });
   }
 
-  function handleDragEnd(e) {
-    // Restore the panel after drag
-    const panel = document.querySelector('aside[class*="fixed right-0"]');
+  function handleDragEnd() {
+    // Restore panel
+    const panel = document.querySelector('aside');
     if (panel) {
       panel.style.pointerEvents = '';
       panel.style.opacity = '';
     }
+    // Restore EventBlocks
+    document.querySelectorAll('[data-event-block]').forEach((el) => {
+      el.style.pointerEvents = '';
+    });
   }
 
   return (
