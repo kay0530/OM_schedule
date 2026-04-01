@@ -15,8 +15,8 @@ import StatusOverlay from './StatusOverlay';
 
 // Time grid constants
 const HOUR_HEIGHT = 60; // pixels per hour
-const START_HOUR = 7;
-const END_HOUR = 19;
+const START_HOUR = 0;
+const END_HOUR = 24;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 const SLOT_MINUTES = 30;
 
