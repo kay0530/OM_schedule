@@ -3,7 +3,7 @@ import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useCalendar } from '../../context/CalendarContext';
-import { updateCalendarEvent, deleteCalendarEvent } from '../../services/graphCalendarService';
+import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../../services/graphCalendarService';
 
 // Generate 30-minute interval options from 08:00 to 18:00
 const TIME_OPTIONS = [];
@@ -52,7 +52,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setEditStartTime(startTime);
       setEditEndTime(endTime);
       setEditMemberId(event.memberId || '');
-      setSyncToOutlook(!!event.isOutlookSynced || !!event.outlookEventId || isOutlookEvent(event));
+      setSyncToOutlook(false);
     }
   }, [event, isOpen]);
 
@@ -147,43 +147,51 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       }
 
       // Sync to Outlook if checkbox is checked and user is authenticated
-      if (syncToOutlook && isAuthenticated && (isOutlook || event.outlookEventId)) {
+      if (syncToOutlook && isAuthenticated) {
         const token = await getToken();
-        const memberEmail = event.memberEmail || member?.email;
-        const eventId = event.id || event.outlookEventId;
+        const selectedMember = MEMBERS.find((m) => m.id === editMemberId) || member;
+        const memberEmail = selectedMember?.email;
 
-        if (memberEmail && eventId) {
-          const updates = {
-            subject: editTitle,
-            start: {
-              dateTime: `${editDate}T${editStartTime}:00`,
-              timeZone: 'Asia/Tokyo',
-            },
-            end: {
-              dateTime: `${editDate}T${editEndTime}:00`,
-              timeZone: 'Asia/Tokyo',
-            },
-          };
-          const result = await updateCalendarEvent(token, memberEmail, eventId, updates);
-          if (!result.success) {
-            setError(`Outlook更新エラー: ${result.error}`);
-            setSaving(false);
-            return;
+        if (memberEmail && !selectedMember?.skipOutlookSync) {
+          const hasExistingOutlookEvent = isOutlook || event.outlookEventId;
+
+          if (hasExistingOutlookEvent) {
+            // Update existing Outlook event
+            const eventId = event.id || event.outlookEventId;
+            const updates = {
+              subject: editTitle,
+              start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
+            };
+            const result = await updateCalendarEvent(token, memberEmail, eventId, updates);
+            if (!result.success) {
+              setError(`Outlook更新エラー: ${result.error}`);
+              setSaving(false);
+              return;
+            }
+            setEvents(
+              events.map((e) =>
+                e.id === eventId
+                  ? { ...e, title: editTitle, start: `${editDate}T${editStartTime}:00`, end: `${editDate}T${editEndTime}:00` }
+                  : e
+              )
+            );
+          } else {
+            // Create new Outlook event
+            const eventData = {
+              subject: editTitle,
+              start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
+              location: { displayName: event.address || '' },
+              body: { contentType: 'Text', content: event.scheduleMemo || '' },
+            };
+            const result = await createCalendarEvent(token, memberEmail, eventData);
+            if (!result.success) {
+              setError(`Outlook登録エラー: ${result.error}`);
+              setSaving(false);
+              return;
+            }
           }
-
-          // Update the event in CalendarContext
-          setEvents(
-            events.map((e) =>
-              e.id === eventId
-                ? {
-                    ...e,
-                    title: editTitle,
-                    start: `${editDate}T${editStartTime}:00`,
-                    end: `${editDate}T${editEndTime}:00`,
-                  }
-                : e
-            )
-          );
         }
       }
 
@@ -264,7 +272,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                 {editMode ? '予定を編集' : (
                   event.opportunityId ? (
                     <a
-                      href={`https://altenergy.lightning.force.com/lightning/r/${event.sourceType === 'maintenance' ? 'Maintenance__c' : 'Opportunity'}/${event.opportunityId}/view`}
+                      href={`https://altenergyinc.my.salesforce.com/lightning/r/${event.sourceType === 'maintenance' ? 'Maintenance__c' : 'Opportunity'}/${event.opportunityId}/view`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="hover:underline text-blue-700"
@@ -362,7 +370,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                 </div>
 
                 {/* Outlook sync checkbox */}
-                {(isOutlook || event.outlookEventId) && isAuthenticated && (
+                {isAuthenticated && (
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -370,7 +378,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                       onChange={(e) => setSyncToOutlook(e.target.checked)}
                       className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                     />
-                    <span className="text-sm text-gray-700">Outlookに反映</span>
+                    <span className="text-sm text-gray-700">
+                      {(isOutlook || event.outlookEventId) ? 'Outlookに反映' : 'Outlookに登録'}
+                    </span>
                   </label>
                 )}
               </div>
