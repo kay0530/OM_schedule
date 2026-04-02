@@ -36,6 +36,8 @@ export default function AssignModal({
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
   const [syncOutlook, setSyncOutlook] = useState(true);
+  const [workCategory, setWorkCategory] = useState('');
+  const [customCategory, setCustomCategory] = useState('');
 
   // Reset form when opportunity changes or modal opens
   useEffect(() => {
@@ -49,6 +51,8 @@ export default function AssignModal({
       setStartTime(preselectedStartTime || '08:00');
       setEndTime(preselectedEndTime || '17:00');
       setSyncOutlook(true);
+      setWorkCategory('');
+      setCustomCategory('');
     }
   }, [isOpen, opportunity, preselectedMember, preselectedDate, preselectedStartTime, preselectedEndTime]);
 
@@ -76,6 +80,12 @@ export default function AssignModal({
 
     setSaving(true);
 
+    // Build title with work category prefix
+    const categoryLabel = workCategory === 'その他（手入力）' ? customCategory.trim() : workCategory;
+    const displayName = categoryLabel
+      ? `【${categoryLabel}】${opportunity.name}`
+      : opportunity.name;
+
     // Build payload based on record type
     const isMaint = opportunity.type === 'maintenance';
     const outlookResults = [];
@@ -85,7 +95,7 @@ export default function AssignModal({
       const assignmentPayload = {
         sourceType: opportunity.type || 'opportunity',
         opportunityId: opportunity.id,
-        opportunityName: opportunity.name,
+        opportunityName: displayName,
         accountName: isMaint ? null : opportunity.accountName,
         summary: isMaint ? opportunity.summary : null,
         category: opportunity.category || null,
@@ -113,7 +123,7 @@ export default function AssignModal({
               outlookResults.push({ member: member.nameJa, success: false, error: 'トークン取得失敗' });
             } else {
               const eventData = {
-                subject: opportunity.name,
+                subject: displayName,
                 start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
                 end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
                 location: { displayName: opportunity.address || '' },
@@ -202,6 +212,39 @@ export default function AssignModal({
                   </span>
                 )}
               </div>
+            </div>
+
+            {/* Work category */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                作業種別
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {['現地調査', 'パワまる工事', '年次点検', '洗浄', '草刈り', '事前準備', 'その他（手入力）'].map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setWorkCategory(workCategory === cat ? '' : cat)}
+                    className={`px-3 py-1.5 rounded-lg border text-sm transition ${
+                      workCategory === cat
+                        ? 'border-orange-500 bg-orange-50 text-orange-800 ring-1 ring-orange-500'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+              {workCategory === 'その他（手入力）' && (
+                <input
+                  type="text"
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  placeholder="作業種別を入力..."
+                  className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  autoFocus
+                />
+              )}
             </div>
 
             {/* Member multi-select */}
