@@ -170,12 +170,12 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     [events]
   );
 
-  // Get assignments for a member + date (from AppContext)
+  // Get assignments for a member + date (from AppContext), excluding deliveries
   const getAssignmentsForMemberDate = useCallback(
     (memberId, date) => {
       const dateStr = toISODate(date);
       return assignments.filter(
-        (a) => a.memberId === memberId && a.date === dateStr
+        (a) => a.memberId === memberId && a.date === dateStr && !a.isDelivery
       );
     },
     [assignments]
@@ -192,6 +192,17 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       return null;
     },
     [getAllDayEventsForMemberDate]
+  );
+
+  // Get delivery assignments for a member + date
+  const getDeliveriesForMemberDate = useCallback(
+    (memberId, date) => {
+      const dateStr = toISODate(date);
+      return assignments.filter(
+        (a) => a.memberId === memberId && a.date === dateStr && a.isDelivery
+      );
+    },
+    [assignments]
   );
 
   // Check if any all-day events exist in visible data
@@ -219,6 +230,34 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     const interval = setInterval(updateCurrentTime, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // Handle drop on delivery row — register directly without modal
+  function handleDeliveryDrop(e, date, memberId) {
+    e.preventDefault();
+    setDragOverCell(null);
+    try {
+      const rawData = JSON.parse(e.dataTransfer.getData('application/json'));
+      if (rawData.type === 'event-move') return; // Don't handle event-move in delivery row
+      const member = MEMBERS.find((m) => m.id === memberId);
+      dispatch({
+        type: 'ADD_ASSIGNMENT',
+        payload: {
+          sourceType: rawData.type || 'opportunity',
+          opportunityId: rawData.id,
+          opportunityName: `【納品】${rawData.name}`,
+          accountName: rawData.accountName || null,
+          memberId,
+          date: toISODate(date),
+          startTime: '08:00',
+          endTime: '17:00',
+          isDelivery: true,
+          address: rawData.address || null,
+        },
+      });
+    } catch {
+      // Invalid drag data
+    }
+  }
 
   // Drag-and-drop state
   const [dragOverCell, setDragOverCell] = useState(null);
@@ -489,6 +528,49 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                     })}
                   </div>
 
+                  {/* Delivery row */}
+                  <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
+                    <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-orange-500 font-medium sticky left-0 z-30 bg-white">
+                      納品
+                    </div>
+                    {displayDates.map((date, dIdx) => (
+                      <div
+                        key={`delivery-${toISODate(date)}`}
+                        className={`flex-1 min-w-[120px] flex ${
+                          dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
+                        }`}
+                      >
+                        {visibleOrderedMembers.map((member) => {
+                          const deliveries = getDeliveriesForMemberDate(member.id, date);
+                          const cellKey = `delivery-${toISODate(date)}-${member.id}`;
+                          const isDragOver = dragOverCell === cellKey;
+                          return (
+                            <div
+                              key={cellKey}
+                              className={`flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 transition-colors ${
+                                isDragOver ? 'bg-orange-100/60 ring-1 ring-inset ring-orange-400' : ''
+                              }`}
+                              onDragOver={(e) => { e.preventDefault(); setDragOverCell(cellKey); }}
+                              onDragLeave={handleDragLeave}
+                              onDrop={(e) => handleDeliveryDrop(e, date, member.id)}
+                            >
+                              {deliveries.map((d) => (
+                                <div
+                                  key={d.id}
+                                  className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer bg-orange-100 border-l-2 border-orange-500 text-orange-700"
+                                  title={d.opportunityName}
+                                  onClick={() => onEventClick(d)}
+                                >
+                                  {d.opportunityName?.replace('【納品】', '')}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+
                   {/* All-day events banner */}
                   {hasAnyAllDayEvents && (
                     <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
@@ -706,6 +788,49 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             );
                           })}
                         </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Delivery row */}
+                  <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
+                    <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-orange-500 font-medium sticky left-0 z-30 bg-white">
+                      納品
+                    </div>
+                    {visibleOrderedMembers.map((member, mIdx) => (
+                      <div
+                        key={`delivery-member-${member.id}`}
+                        className={`flex-1 min-w-[100px] flex ${
+                          mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
+                        }`}
+                      >
+                        {displayDates.map((date) => {
+                          const deliveries = getDeliveriesForMemberDate(member.id, date);
+                          const cellKey = `delivery-${toISODate(date)}-${member.id}`;
+                          const isDragOver = dragOverCell === cellKey;
+                          return (
+                            <div
+                              key={cellKey}
+                              className={`flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 transition-colors ${
+                                isDragOver ? 'bg-orange-100/60 ring-1 ring-inset ring-orange-400' : ''
+                              }`}
+                              onDragOver={(e) => { e.preventDefault(); setDragOverCell(cellKey); }}
+                              onDragLeave={handleDragLeave}
+                              onDrop={(e) => handleDeliveryDrop(e, date, member.id)}
+                            >
+                              {deliveries.map((d) => (
+                                <div
+                                  key={d.id}
+                                  className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer bg-orange-100 border-l-2 border-orange-500 text-orange-700"
+                                  title={d.opportunityName}
+                                  onClick={() => onEventClick(d)}
+                                >
+                                  {d.opportunityName?.replace('【納品】', '')}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
                       </div>
                     ))}
                   </div>
