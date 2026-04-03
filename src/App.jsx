@@ -90,12 +90,12 @@ function AppInner() {
   }
 
   // Called on double-click on empty slot — quick add (no SF job)
-  function handleSlotDoubleClick(date, time, memberId) {
+  function handleSlotDoubleClick(date, time, memberId, options) {
     if (pickedJob) {
       handleSlotClick(date, time, memberId);
       return;
     }
-    setQuickAddPresets({ presetDate: date, presetTime: time, presetMemberId: memberId });
+    setQuickAddPresets({ presetDate: date, presetTime: time, presetMemberId: memberId, presetAllDay: options?.isAllDay || false });
     setQuickAddOpen(true);
   }
 
@@ -131,16 +131,24 @@ function AppInner() {
     setSelectedEvent(null);
   }
 
-  // Keyboard shortcuts: Escape, Ctrl+C, Ctrl+V
+  // Keyboard shortcuts: Escape, Ctrl+C, Delete
   function handleKeyDown(e) {
     if (e.key === 'Escape') {
       if (pickedJob) setPickedJob(null);
       else if (copiedEvent) setCopiedEvent(null);
       else if (activeEvent) setActiveEvent(null);
     }
+    if (e.key === 'Delete' && activeEvent && activeEvent.opportunityName) {
+      // Delete selected assignment
+      if (confirm(`「${activeEvent.opportunityName}」を削除しますか？`)) {
+        dispatch({ type: 'DELETE_ASSIGNMENT', payload: activeEvent.id });
+        setActiveEvent(null);
+      }
+    }
     if ((e.ctrlKey || e.metaKey) && e.key === 'c' && activeEvent) {
       e.preventDefault();
-      // Copy the assignment data for pasting
+      const st = activeEvent.startTime || activeEvent.start?.substring(11, 16) || '08:00';
+      const et = activeEvent.endTime || activeEvent.end?.substring(11, 16) || '09:00';
       const copyData = {
         sourceType: activeEvent.sourceType || 'manual',
         opportunityId: activeEvent.opportunityId || null,
@@ -151,14 +159,11 @@ function AppInner() {
         stage: activeEvent.stage || null,
         address: activeEvent.address || null,
         scheduleMemo: activeEvent.scheduleMemo || null,
-        startTime: activeEvent.startTime || '08:00',
-        endTime: activeEvent.endTime || '17:00',
+        startTime: st,
+        endTime: et,
         isAllDay: activeEvent.isAllDay || false,
       };
       setCopiedEvent(copyData);
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedEvent) {
-      // Paste is handled by slot click — just show banner
     }
   }
 
@@ -237,6 +242,7 @@ function AppInner() {
         presetDate={quickAddPresets.presetDate}
         presetTime={quickAddPresets.presetTime}
         presetMemberId={quickAddPresets.presetMemberId}
+        presetAllDay={quickAddPresets.presetAllDay}
       />
     </>
   );
