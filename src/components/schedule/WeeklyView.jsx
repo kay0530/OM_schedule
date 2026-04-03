@@ -47,7 +47,7 @@ function detectStatusType(title) {
  * Shows days of the week as columns, 30-minute time slots as rows,
  * with member filter chips and events positioned by time.
  */
-export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onSlotClick, onSlotDoubleClick }) {
+export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, activeEventId, onSlotClick, onSlotDoubleClick }) {
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
 
@@ -716,6 +716,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                   startHour={START_HOUR}
                                   memberColor={member.color}
                                   onClick={onEventClick}
+                                  onDoubleClick={onEventDoubleClick}
+                                  isActive={activeEventId === event.id}
                                 />
                               ))}
 
@@ -728,6 +730,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                   startHour={START_HOUR}
                                   memberColor={member.color}
                                   onClick={onEventClick}
+                                  onDoubleClick={onEventDoubleClick}
+                                  isActive={activeEventId === assignment.id}
                                   onResizeEnd={handleResizeEnd}
                                 />
                               ))}

@@ -9,9 +9,9 @@ import { useAuth } from '../../context/AuthContext';
  */
 
 const TIME_SLOTS = [];
-for (let h = 7; h <= 19; h++) {
+for (let h = 0; h <= 24; h++) {
   for (let m = 0; m < 60; m += 30) {
-    if (h === 19 && m > 0) break;
+    if (h === 24 && m > 0) break;
     TIME_SLOTS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
   }
 }
@@ -25,6 +25,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [memberId, setMemberId] = useState('');
+  const [isAllDay, setIsAllDay] = useState(false);
   const [location, setLocation] = useState('');
   const [memo, setMemo] = useState('');
   const [syncOutlook, setSyncOutlook] = useState(true);
@@ -37,8 +38,9 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
       setStartTime(presetTime || '09:00');
       // Default 1 hour duration
       const startH = parseInt(presetTime?.substring(0, 2) || '9');
-      setEndTime(`${String(Math.min(startH + 1, 19)).padStart(2, '0')}:00`);
+      setEndTime(`${String(Math.min(startH + 1, 24)).padStart(2, '0')}:00`);
       setMemberId(presetMemberId || '');
+      setIsAllDay(false);
       setLocation('');
       setMemo('');
       setSyncOutlook(true);
@@ -64,8 +66,9 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
         opportunityName: title.trim(),
         memberId,
         date,
-        startTime,
-        endTime,
+        startTime: isAllDay ? '00:00' : startTime,
+        endTime: isAllDay ? '24:00' : endTime,
+        isAllDay,
         syncOutlook,
         address: location,
         scheduleMemo: memo,
@@ -83,17 +86,26 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
             type: 'required',
           }] : [];
 
+          const eventBody = isAllDay ? {
+            subject: title.trim(),
+            isAllDay: true,
+            start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: location },
+            body: { contentType: 'Text', content: memo },
+            attendees: attendees.length > 0 ? attendees : undefined,
+          } : {
+            subject: title.trim(),
+            start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: location },
+            body: { contentType: 'Text', content: memo },
+            attendees: attendees.length > 0 ? attendees : undefined,
+          };
           await fetch('https://graph.microsoft.com/v1.0/me/events', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              subject: title.trim(),
-              start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: location },
-              body: { contentType: 'Text', content: memo },
-              attendees: attendees.length > 0 ? attendees : undefined,
-            }),
+            body: JSON.stringify(eventBody),
           });
         }
       } catch (err) {
@@ -151,8 +163,19 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
 
+            {/* All-day toggle */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isAllDay}
+                onChange={(e) => setIsAllDay(e.target.checked)}
+                className="w-4 h-4 text-orange-600 rounded border-gray-300 focus:ring-orange-500"
+              />
+              <span className="text-sm text-gray-700">終日</span>
+            </label>
+
             {/* Time */}
-            <div className="grid grid-cols-2 gap-3">
+            {!isAllDay && <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">開始</label>
                 <select value={startTime} onChange={(e) => setStartTime(e.target.value)}
@@ -167,7 +190,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
                   {TIME_SLOTS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
-            </div>
+            </div>}
 
             {/* Location */}
             <input

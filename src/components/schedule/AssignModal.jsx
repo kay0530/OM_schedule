@@ -9,11 +9,11 @@ import { createCalendarEvent } from '../../services/graphCalendarService';
  * Supports multi-member selection, date/time inputs, and Outlook sync toggle.
  */
 
-// Generate time slots at 30-min intervals from 08:00 to 18:00
+// Generate time slots at 30-min intervals from 00:00 to 24:00
 const TIME_SLOTS = [];
-for (let h = 8; h <= 18; h++) {
+for (let h = 0; h <= 24; h++) {
   for (let m = 0; m < 60; m += 30) {
-    if (h === 18 && m > 0) break;
+    if (h === 24 && m > 0) break;
     TIME_SLOTS.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
   }
 }
@@ -36,6 +36,7 @@ export default function AssignModal({
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
   const [syncOutlook, setSyncOutlook] = useState(true);
+  const [isAllDay, setIsAllDay] = useState(false);
   const [workCategory, setWorkCategory] = useState('');
   const [customCategory, setCustomCategory] = useState('');
 
@@ -51,6 +52,7 @@ export default function AssignModal({
       setStartTime(preselectedStartTime || '08:00');
       setEndTime(preselectedEndTime || '17:00');
       setSyncOutlook(true);
+      setIsAllDay(false);
       setWorkCategory('');
       setCustomCategory('');
     }
@@ -102,8 +104,9 @@ export default function AssignModal({
         status: isMaint ? opportunity.status : opportunity.stage,
         memberId,
         date,
-        startTime,
-        endTime,
+        startTime: isAllDay ? '00:00' : startTime,
+        endTime: isAllDay ? '24:00' : endTime,
+        isAllDay,
         syncOutlook,
         stage: isMaint ? null : opportunity.stage,
         address: opportunity.address,
@@ -122,7 +125,14 @@ export default function AssignModal({
             if (!token) {
               outlookResults.push({ member: member.nameJa, success: false, error: 'トークン取得失敗' });
             } else {
-              const eventData = {
+              const eventData = isAllDay ? {
+                subject: displayName,
+                isAllDay: true,
+                start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+                end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+                location: { displayName: opportunity.address || '' },
+                body: { contentType: 'Text', content: opportunity.scheduleMemo || opportunity.content || '' },
+              } : {
                 subject: displayName,
                 start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
                 end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
@@ -290,8 +300,19 @@ export default function AssignModal({
               />
             </div>
 
+            {/* All-day toggle */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isAllDay}
+                onChange={(e) => setIsAllDay(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">終日</span>
+            </label>
+
             {/* Time range */}
-            <div className="grid grid-cols-2 gap-4">
+            {!isAllDay && <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   開始時間
@@ -320,7 +341,7 @@ export default function AssignModal({
                   ))}
                 </select>
               </div>
-            </div>
+            </div>}
 
             {/* Outlook sync checkbox */}
             <div className="flex items-center gap-3">
