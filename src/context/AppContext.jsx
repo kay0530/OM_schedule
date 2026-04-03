@@ -48,10 +48,11 @@ function loadInitialState() {
 function appReducer(state, action) {
   switch (action.type) {
     case 'ADD_ASSIGNMENT': {
+      const { id: _ignoreId, ...payloadWithoutId } = action.payload;
       const newAssignment = {
         id: `assign_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         isOutlookSynced: false,
-        ...action.payload,
+        ...payloadWithoutId,
       };
       return { ...state, assignments: [...state.assignments, newAssignment] };
     }
