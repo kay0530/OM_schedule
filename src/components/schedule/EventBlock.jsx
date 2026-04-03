@@ -8,7 +8,7 @@ import { timeStringToMinutes } from '../../utils/dateUtils';
  *
  * @param {{ event: object, hourHeight: number, startHour: number, memberColor?: string, onClick?: (event) => void, onResizeEnd?: (event, newEndTime: string) => void }}
  */
-export default function EventBlock({ event, hourHeight, startHour, memberColor, onClick, onResizeEnd }) {
+export default function EventBlock({ event, hourHeight, startHour, memberColor, onClick, onDoubleClick, onResizeEnd, isActive }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [resizeDeltaPx, setResizeDeltaPx] = useState(0);
   const [isResizing, setIsResizing] = useState(false);
@@ -135,7 +135,7 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
       data-event-block="true"
       className={`absolute left-0.5 right-0.5 rounded overflow-hidden cursor-pointer transition-shadow hover:shadow-md ${
         isResizing ? 'opacity-80 shadow-lg' : ''
-      } ${isDraggable ? 'select-none' : ''}`}
+      } ${isDraggable ? 'select-none' : ''} ${isActive ? 'ring-2 ring-blue-500 shadow-md' : ''}`}
       style={{
         top: `${topOffset}px`,
         height: `${Math.max(height, 14)}px`,
@@ -149,6 +149,11 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
         if (isResizing) return;
         e.stopPropagation();
         if (onClick) onClick(event);
+      }}
+      onDoubleClick={(e) => {
+        if (isResizing) return;
+        e.stopPropagation();
+        if (onDoubleClick) onDoubleClick(event);
       }}
       onMouseEnter={() => !isResizing && setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
