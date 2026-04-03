@@ -381,9 +381,10 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                     return (
                       <div
                         key={`allday-${member.id}`}
-                        className={`flex-1 min-w-[80px] overflow-hidden px-0.5 py-0.5 ${
+                        className={`flex-1 min-w-[80px] overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-gray-50 ${
                           mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
                         }`}
+                        onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(dateStr, '08:00', member.id, { isAllDay: true })}
                       >
                         {allDayEvts.map((evt) => (
                           <div
