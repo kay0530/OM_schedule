@@ -55,7 +55,9 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
   // Navigate to previous/next period
   function navigatePeriod(direction) {
     const newDate = new Date(currentDate);
-    if (activeView === 'weekly') {
+    if (activeView === 'daily') {
+      newDate.setDate(newDate.getDate() + direction);
+    } else if (activeView === 'weekly') {
       newDate.setDate(newDate.getDate() + direction * 7);
     } else {
       newDate.setMonth(newDate.getMonth() + direction);
@@ -68,8 +70,15 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
     onDateChange(new Date());
   }
 
+  function formatDay(date) {
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日（${dayNames[date.getDay()]}）`;
+  }
+
   const periodLabel =
-    activeView === 'weekly' ? formatWeek(currentDate) : formatMonth(currentDate);
+    activeView === 'daily' ? formatDay(currentDate)
+      : activeView === 'weekly' ? formatWeek(currentDate)
+        : formatMonth(currentDate);
 
   return (
     <header className="h-14 bg-white border-b border-gray-200 flex items-center px-4 fixed top-0 left-0 right-0 z-30">
@@ -146,6 +155,16 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
             }`}
           >
             週間
+          </button>
+          <button
+            onClick={() => onNavigate('daily')}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              activeView === 'daily'
+                ? 'bg-white text-gray-800 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            日別
           </button>
         </div>
       )}

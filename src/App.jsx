@@ -5,6 +5,7 @@ import { AppProvider } from './context/AppContext';
 import MainLayout from './components/layout/MainLayout';
 import MonthlyView from './components/schedule/MonthlyView';
 import WeeklyView from './components/schedule/WeeklyView';
+import DailyView from './components/schedule/DailyView';
 import SettingsView from './components/settings/SettingsView';
 import AssignModal from './components/schedule/AssignModal';
 import EventDetailModal from './components/schedule/EventDetailModal';
@@ -112,6 +113,8 @@ export default function App() {
         return <MonthlyView navigate={navigate} currentDate={currentDate} onDropJob={handleDropJob} onEventClick={handleEventClick} {...viewParams} />;
       case 'weekly':
         return <WeeklyView navigate={navigate} currentDate={currentDate} onDateChange={setCurrentDate} onDropJob={handleDropJob} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onSlotDoubleClick={handleSlotDoubleClick} {...viewParams} />;
+      case 'daily':
+        return <DailyView navigate={navigate} currentDate={currentDate} onDateChange={setCurrentDate} onDropJob={handleDropJob} onEventClick={handleEventClick} onSlotClick={handleSlotClick} onSlotDoubleClick={handleSlotDoubleClick} {...viewParams} />;
       case 'settings':
         return <SettingsView />;
       default:
