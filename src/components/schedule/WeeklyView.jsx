@@ -591,7 +591,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             return (
                               <div
                                 key={`allday-${member.id}-${toISODate(date)}`}
-                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5"
+                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-gray-50"
+                                onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(toISODate(date), '08:00', member.id, { isAllDay: true })}
                               >
                                 {allDayEvts.map((evt) => (
                                   <div
@@ -859,7 +860,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             return (
                               <div
                                 key={`allday-${member.id}-${toISODate(date)}`}
-                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5"
+                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-gray-50"
+                                onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(toISODate(date), '08:00', member.id, { isAllDay: true })}
                               >
                                 {allDayEvts.map((evt) => (
                                   <div

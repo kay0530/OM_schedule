@@ -16,7 +16,7 @@ for (let h = 0; h <= 24; h++) {
   }
 }
 
-export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime, presetMemberId }) {
+export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime, presetMemberId, presetAllDay }) {
   const { dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
 
@@ -40,7 +40,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
       const startH = parseInt(presetTime?.substring(0, 2) || '9');
       setEndTime(`${String(Math.min(startH + 1, 24)).padStart(2, '0')}:00`);
       setMemberId(presetMemberId || '');
-      setIsAllDay(false);
+      setIsAllDay(presetAllDay || false);
       setLocation('');
       setMemo('');
       setSyncOutlook(true);
