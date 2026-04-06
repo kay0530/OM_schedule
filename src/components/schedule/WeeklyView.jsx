@@ -983,6 +983,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 startHour={START_HOUR}
                                 memberColor={member.color}
                                 onClick={onEventClick}
+                                onDoubleClick={onEventDoubleClick}
+                                isActive={activeEventId === event.id}
                               />
                             ))}
 
@@ -995,6 +997,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 startHour={START_HOUR}
                                 memberColor={member.color}
                                 onClick={onEventClick}
+                                onDoubleClick={onEventDoubleClick}
+                                isActive={activeEventId === assignment.id}
                                 onResizeEnd={handleResizeEnd}
                               />
                             ))}
