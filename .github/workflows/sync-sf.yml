@@ -1,0 +1,53 @@
+name: Sync Salesforce Data
+
+on:
+  schedule:
+    # Every 30 minutes (UTC)
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-sf
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Salesforce CLI
+        run: npm install -g @salesforce/cli
+
+      - name: Authenticate to Salesforce
+        env:
+          SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL }}
+        run: |
+          echo "$SFDX_AUTH_URL" > /tmp/sfdx-auth.txt
+          sf org login sfdx-url --sfdx-url-file /tmp/sfdx-auth.txt --set-default
+          rm /tmp/sfdx-auth.txt
+
+      - name: Sync Salesforce data
+        run: node scripts/sync-sf.mjs
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/opportunities.json src/data/maintenances.json src/data/sync-meta.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: auto-sync Salesforce data"
+            git push
+          fi

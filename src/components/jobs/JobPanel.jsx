@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import opportunities from '../../data/opportunities.json';
 import maintenances from '../../data/maintenances.json';
+import syncMeta from '../../data/sync-meta.json';
 import JobCard, { STAGE_COLORS, MAINT_STATUS_COLORS } from './JobCard';
 import { isFirestoreEnabled, saveFilterPresets, loadFilterPresets, subscribeFilterPresets } from '../../services/firestoreService';
 
@@ -260,6 +261,11 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
           <span className="ml-2 text-xs font-normal text-gray-500">
             ({currentItems.length}件)
           </span>
+          {syncMeta?.syncedAt && (
+            <span className="block text-[10px] font-normal text-gray-400 mt-0.5" title={`SF最終同期: ${new Date(syncMeta.syncedAt).toLocaleString('ja-JP')}`}>
+              SF同期: {new Date(syncMeta.syncedAt).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
         </h2>
         <button
           onClick={() => onToggle()}
