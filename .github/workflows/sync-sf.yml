@@ -41,13 +41,22 @@ jobs:
         run: node scripts/sync-sf.mjs
 
       - name: Commit and push if changed
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/data/opportunities.json src/data/maintenances.json src/data/sync-meta.json
           if git diff --staged --quiet; then
             echo "No changes to commit"
+            echo "changed=false" >> $GITHUB_OUTPUT
           else
             git commit -m "chore: auto-sync Salesforce data"
             git push
+            echo "changed=true" >> $GITHUB_OUTPUT
           fi
+
+      - name: Trigger deploy workflow
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main
