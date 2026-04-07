@@ -14,6 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'src', 'data');
 const OPP_OUTPUT = join(DATA_DIR, 'opportunities.json');
 const MAINT_OUTPUT = join(DATA_DIR, 'maintenances.json');
+const META_OUTPUT = join(DATA_DIR, 'sync-meta.json');
 
 mkdirSync(DATA_DIR, { recursive: true });
 
@@ -161,5 +162,14 @@ console.log('[sync-sf] Maintenances by category:');
 for (const [cat, count] of Object.entries(catCounts).sort((a, b) => b[1] - a[1])) {
   console.log(`  ${cat}: ${count}`);
 }
+
+// Write sync metadata
+const syncMeta = {
+  syncedAt: new Date().toISOString(),
+  opportunityCount: opportunities.length,
+  maintenanceCount: maintenances.length,
+};
+writeFileSync(META_OUTPUT, JSON.stringify(syncMeta, null, 2), 'utf-8');
+console.log(`[sync-sf] Wrote sync metadata to ${META_OUTPUT}`);
 
 console.log(`\n[sync-sf] Total: ${opportunities.length} opportunities + ${maintenances.length} maintenances`);
