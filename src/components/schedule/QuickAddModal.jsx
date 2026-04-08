@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { createCalendarEvent } from '../../services/graphCalendarService';
 
 /**
  * Quick-add modal for creating a manual schedule entry via double-click.
@@ -75,38 +76,29 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
       },
     });
 
-    // Create Outlook event
+    // Create Outlook event on the target member's calendar (not logged-in user's)
     if (syncOutlook && isAuthenticated) {
       try {
-        const token = await getToken();
-        if (token) {
-          const member = MEMBERS.find((m) => m.id === memberId);
-          const attendees = member && !member.skipOutlookSync ? [{
-            emailAddress: { address: member.email, name: member.nameJa },
-            type: 'required',
-          }] : [];
-
-          const eventBody = isAllDay ? {
-            subject: title.trim(),
-            isAllDay: true,
-            start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-            end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-            location: { displayName: location },
-            body: { contentType: 'Text', content: memo },
-            attendees: attendees.length > 0 ? attendees : undefined,
-          } : {
-            subject: title.trim(),
-            start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
-            end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
-            location: { displayName: location },
-            body: { contentType: 'Text', content: memo },
-            attendees: attendees.length > 0 ? attendees : undefined,
-          };
-          await fetch('https://graph.microsoft.com/v1.0/me/events', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(eventBody),
-          });
+        const member = MEMBERS.find((m) => m.id === memberId);
+        if (member && !member.skipOutlookSync) {
+          const token = await getToken();
+          if (token) {
+            const eventData = isAllDay ? {
+              subject: title.trim(),
+              isAllDay: true,
+              start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+              location: { displayName: location },
+              body: { contentType: 'Text', content: memo },
+            } : {
+              subject: title.trim(),
+              start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
+              location: { displayName: location },
+              body: { contentType: 'Text', content: memo },
+            };
+            await createCalendarEvent(token, member.email, eventData);
+          }
         }
       } catch (err) {
         console.error('Outlook event creation failed:', err);
