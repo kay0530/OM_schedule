@@ -91,23 +91,48 @@ function appReducer(state, action) {
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(appReducer, null, loadInitialState);
   const fromFirestoreRef = useRef(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const initialLoadDoneRef = useRef(false);
 
   // Load from Firestore on mount and subscribe to real-time updates
   useEffect(() => {
     if (!isFirestoreEnabled()) return;
 
-    // Initial load from Firestore
+    // Initial load from Firestore — merge with local data to preserve
+    // any assignments that failed to sync (e.g. Firestore save errors)
     loadAssignments().then((firestoreAssignments) => {
-      if (firestoreAssignments) {
+      const localAssignments = stateRef.current.assignments;
+      const fsArray = firestoreAssignments || [];
+      const fsIds = new Set(fsArray.map((a) => a.id));
+      const localOnly = localAssignments.filter((a) => a.id && !fsIds.has(a.id));
+      const merged = localOnly.length > 0 ? [...fsArray, ...localOnly] : fsArray;
+
+      // Only dispatch if merged differs from local to avoid wiping data
+      if (firestoreAssignments !== null || localOnly.length === 0) {
         fromFirestoreRef.current = true;
-        dispatch({ type: 'SET_ASSIGNMENTS', payload: firestoreAssignments });
+        dispatch({ type: 'SET_ASSIGNMENTS', payload: merged });
       }
+
+      // Re-push merged state to Firestore if we recovered local-only items
+      if (localOnly.length > 0) {
+        saveAssignments(merged);
+      }
+
+      initialLoadDoneRef.current = true;
     });
 
-    // Subscribe to real-time updates
+    // Subscribe to real-time updates — merge to avoid losing local changes
     const unsubscribe = subscribeAssignments((firestoreAssignments) => {
+      if (!initialLoadDoneRef.current) return; // Let initial load handle first
+      const localAssignments = stateRef.current.assignments;
+      const fsIds = new Set(firestoreAssignments.map((a) => a.id));
+      const localOnly = localAssignments.filter((a) => a.id && !fsIds.has(a.id));
+      const merged = localOnly.length > 0
+        ? [...firestoreAssignments, ...localOnly]
+        : firestoreAssignments;
       fromFirestoreRef.current = true;
-      dispatch({ type: 'SET_ASSIGNMENTS', payload: firestoreAssignments });
+      dispatch({ type: 'SET_ASSIGNMENTS', payload: merged });
     });
 
     return unsubscribe;
