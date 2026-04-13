@@ -3044,7 +3044,7 @@
   {
     "id": "006TL00001Me2vZYAR",
     "type": "opportunity",
-    "name": "合同会社ひなた（小筑紫町湊字大馬目木）パワまる三相㋟",
+    "name": "ひなた（小筑紫町湊字大馬目木）パワまる三相㋟",
     "stage": "10_完工／引渡し",
     "scheme": "レンタル",
     "accountName": "合同会社ひなた",
@@ -5198,7 +5198,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005TL00000GVJ3ZYAX",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   },
   {
@@ -5277,7 +5277,7 @@
     "id": "006TL00001q57IbYAI",
     "type": "opportunity",
     "name": "清水峰男（一宮市浅井町）パワまる三相",
-    "stage": "02_メリット訴求・課題の特定",
+    "stage": "07_契約締結",
     "scheme": "レンタル",
     "accountName": "清水峰男",
     "address": "愛知県一宮市浅井町黒岩字砂原２",
@@ -5378,7 +5378,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005TL00000FEQ2oYAH",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   },
   {
@@ -10292,7 +10292,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005TL00000GVJ3ZYAX",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   },
   {
@@ -10634,7 +10634,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005TL00000FEQ2oYAH",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   },
   {
@@ -10814,7 +10814,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005J2000000zffKIAQ",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   },
   {
@@ -10940,7 +10940,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005TL00000GVJ3ZYAX",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   }
 ]
