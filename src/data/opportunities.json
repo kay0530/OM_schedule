@@ -5486,7 +5486,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005J2000000zffKIAQ",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   },
   {
@@ -10904,7 +10904,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005TL00000GVJ3ZYAX",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   },
   {
