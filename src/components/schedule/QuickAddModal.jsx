@@ -3,6 +3,7 @@ import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { createCalendarEvent } from '../../services/graphCalendarService';
+import { buildEventBody } from '../../services/eventBodyTemplate';
 
 /**
  * Quick-add modal for creating a manual schedule entry via double-click.
@@ -83,19 +84,20 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
         if (member && !member.skipOutlookSync) {
           const token = await getToken();
           if (token) {
+            const bodyContent = buildEventBody(memo);
             const eventData = isAllDay ? {
               subject: title.trim(),
               isAllDay: true,
               start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
               end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
               location: { displayName: location },
-              body: { contentType: 'Text', content: memo },
+              body: { contentType: 'Text', content: bodyContent },
             } : {
               subject: title.trim(),
               start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
               end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
               location: { displayName: location },
-              body: { contentType: 'Text', content: memo },
+              body: { contentType: 'Text', content: bodyContent },
             };
             await createCalendarEvent(token, member.email, eventData);
           }
