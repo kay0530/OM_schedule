@@ -1,9 +1,10 @@
 /**
  * Salesforce data sync script.
- * Queries two data sources:
+ * Queries three data sources:
  *   1. Opportunities with ConstractType__c = 'レンタル' (rental)
- *   2. Maintenance__c (点検／修繕) records
- * Saves both as JSON for the construction-schedule app.
+ *   2. Opportunities with RecordType = 'PV'/新規 (self-consumption, 自家消費)
+ *   3. Maintenance__c (点検／修繕) records
+ * Saves each as JSON for the construction-schedule app.
  */
 import { execSync } from 'child_process';
 import { writeFileSync, mkdirSync } from 'fs';
@@ -13,6 +14,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'src', 'data');
 const OPP_OUTPUT = join(DATA_DIR, 'opportunities.json');
+const SELF_OUTPUT = join(DATA_DIR, 'self-consumption.json');
 const MAINT_OUTPUT = join(DATA_DIR, 'maintenances.json');
 const META_OUTPUT = join(DATA_DIR, 'sync-meta.json');
 
@@ -102,7 +104,55 @@ for (const [stage, count] of Object.entries(stageCounts).sort((a, b) => b[1] - a
   console.log(`  ${stage}: ${count}`);
 }
 
-// ---- 2. Maintenance__c (点検／修繕) ----
+// ---- 2. Opportunities (自家消費 — RecordType = PV/新規) ----
+const SELF_QUERY = `
+SELECT Id, Name, StageName2__c, ConstractType__c, AccountId, Account.Name,
+       LocationAddress__c, KojiSekouyoteibi__c, KojiSekoukiboubi__c,
+       Kankobi__c, ConstructionCategory__c, ConstUser__c,
+       AllSchaduleBikou__c, OwnerId,
+       SurveyKakutei__c, KojiSekouKakuteibi__c
+FROM Opportunity
+WHERE RecordType.DeveloperName = 'PV'
+  AND StageName2__c NOT IN ('失注', 'ペンディング', '99_完了')
+ORDER BY KojiSekouyoteibi__c ASC NULLS LAST
+`.trim().replace(/\n/g, ' ');
+
+const selfRecords = queryRecords(SELF_QUERY, '自家消費');
+
+const selfConsumption = selfRecords.map((rec) => ({
+  id: rec.Id,
+  type: 'self-consumption',
+  name: rec.Name,
+  stage: rec.StageName2__c || null,
+  scheme: rec.ConstractType__c || null,
+  accountName: rec.Account?.Name || null,
+  address: rec.LocationAddress__c || null,
+  constructionDate: rec.KojiSekouyoteibi__c || null,
+  desiredDate: rec.KojiSekoukiboubi__c || null,
+  completionDate: rec.Kankobi__c || null,
+  category: rec.ConstructionCategory__c || null,
+  constructionUserId: rec.ConstUser__c || null,
+  scheduleMemo: rec.AllSchaduleBikou__c || null,
+  ownerId: rec.OwnerId || null,
+  surveyConfirmed: rec.SurveyKakutei__c || false,
+  constructionDateConfirmed: rec.KojiSekouKakuteibi__c || false,
+}));
+
+writeFileSync(SELF_OUTPUT, JSON.stringify(selfConsumption, null, 2), 'utf-8');
+console.log(`[sync-sf] Saved ${selfConsumption.length} self-consumption opportunities to ${SELF_OUTPUT}`);
+
+// Self-consumption stage breakdown
+const selfStageCounts = {};
+for (const opp of selfConsumption) {
+  const stage = opp.stage || '(none)';
+  selfStageCounts[stage] = (selfStageCounts[stage] || 0) + 1;
+}
+console.log('[sync-sf] Self-consumption by stage:');
+for (const [stage, count] of Object.entries(selfStageCounts).sort((a, b) => b[1] - a[1])) {
+  console.log(`  ${stage}: ${count}`);
+}
+
+// ---- 3. Maintenance__c (点検／修繕) ----
 const MAINT_QUERY = `
 SELECT Id, Name, Status__c, Category__c, Direction__c, Field2__c,
        Account__c, ScheduledDate__c, ExecEndDate__c, ExecDateKakutei__c,
@@ -167,9 +217,10 @@ for (const [cat, count] of Object.entries(catCounts).sort((a, b) => b[1] - a[1])
 const syncMeta = {
   syncedAt: new Date().toISOString(),
   opportunityCount: opportunities.length,
+  selfConsumptionCount: selfConsumption.length,
   maintenanceCount: maintenances.length,
 };
 writeFileSync(META_OUTPUT, JSON.stringify(syncMeta, null, 2), 'utf-8');
 console.log(`[sync-sf] Wrote sync metadata to ${META_OUTPUT}`);
 
-console.log(`\n[sync-sf] Total: ${opportunities.length} opportunities + ${maintenances.length} maintenances`);
+console.log(`\n[sync-sf] Total: ${opportunities.length} rental + ${selfConsumption.length} self-consumption + ${maintenances.length} maintenances`);
