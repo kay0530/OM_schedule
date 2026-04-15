@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { CalendarProvider } from './context/CalendarContext';
 import { AppProvider, useApp } from './context/AppContext';
 import MainLayout from './components/layout/MainLayout';
@@ -10,6 +10,21 @@ import SettingsView from './components/settings/SettingsView';
 import AssignModal from './components/schedule/AssignModal';
 import EventDetailModal from './components/schedule/EventDetailModal';
 import QuickAddModal from './components/schedule/QuickAddModal';
+import LoginGate from './components/auth/LoginGate';
+
+function AuthenticatedApp() {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading || !isAuthenticated) {
+    return <LoginGate />;
+  }
+  return (
+    <CalendarProvider>
+      <AppProvider>
+        <AppInner />
+      </AppProvider>
+    </CalendarProvider>
+  );
+}
 
 function AppInner() {
   const { dispatch } = useApp();
@@ -251,11 +266,7 @@ function AppInner() {
 export default function App() {
   return (
     <AuthProvider>
-      <CalendarProvider>
-        <AppProvider>
-          <AppInner />
-        </AppProvider>
-      </CalendarProvider>
+      <AuthenticatedApp />
     </AuthProvider>
   );
 }
