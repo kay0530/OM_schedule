@@ -4539,7 +4539,7 @@
     "id": "006TL00001ZYCV7YAP",
     "type": "opportunity",
     "name": "Ｋワールド（鉾田市安房夫婦石０３）パワまる三相",
-    "stage": "07_契約締結",
+    "stage": "09_完工検査",
     "scheme": "レンタル",
     "accountName": "株式会社Ｋワールド",
     "address": "茨城県鉾田市安房夫婦石１９１９－１２",
@@ -4611,7 +4611,7 @@
     "id": "006TL00001ZYiA2YAL",
     "type": "opportunity",
     "name": "Ｋワールド（鉾田市安房夫婦石０７）パワまる三相",
-    "stage": "07_契約締結",
+    "stage": "09_完工検査",
     "scheme": "レンタル",
     "accountName": "株式会社Ｋワールド",
     "address": "茨城県鉾田市安房夫婦石１９１９－４",
@@ -10922,7 +10922,7 @@
     "constructionUserId": null,
     "scheduleMemo": null,
     "ownerId": "005TL00000FEQ2oYAH",
-    "surveyConfirmed": false,
+    "surveyConfirmed": true,
     "constructionDateConfirmed": false
   },
   {
