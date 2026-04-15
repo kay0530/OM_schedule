@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import opportunities from '../../data/opportunities.json';
+import selfConsumption from '../../data/self-consumption.json';
 import maintenances from '../../data/maintenances.json';
 import syncMeta from '../../data/sync-meta.json';
 import JobCard, { STAGE_COLORS, MAINT_STATUS_COLORS } from './JobCard';
@@ -7,12 +8,14 @@ import { isFirestoreEnabled, saveFilterPresets, loadFilterPresets, subscribeFilt
 
 /**
  * Sidebar panel listing Salesforce records.
- * Two tabs: レンタル商談 (opportunities) and 点検／修繕 (maintenance).
+ * Three tabs: レンタル商談 (opportunities), 自家消費 (self-consumption),
+ * and 点検／修繕 (maintenance).
  * Supports text search, stage/status filtering, collapsing,
  * and saving/loading filter presets via localStorage.
  */
 
 const ALL_STAGES = [...new Set(opportunities.map((o) => o.stage))].filter(Boolean).sort();
+const ALL_SELF_STAGES = [...new Set(selfConsumption.map((o) => o.stage))].filter(Boolean).sort();
 const ALL_MAINT_STATUSES = [...new Set(maintenances.map((m) => m.status))].filter(Boolean).sort();
 
 // Tri-state filter chip: null (all) → true (confirmed only) → false (unconfirmed only) → null
@@ -69,6 +72,7 @@ function saveLastFilter(filter) {
 
 const TABS = [
   { id: 'opportunity', label: 'レンタル商談', count: opportunities.length },
+  { id: 'self-consumption', label: '自家消費', count: selfConsumption.length },
   { id: 'maintenance', label: '点検／修繕', count: maintenances.length },
 ];
 
@@ -85,6 +89,12 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
       return new Set(lastFilter.filters);
     }
     return new Set(ALL_STAGES);
+  });
+  const [activeSelfStages, setActiveSelfStages] = useState(() => {
+    if (lastFilter?.tab === 'self-consumption' && lastFilter?.filters) {
+      return new Set(lastFilter.filters);
+    }
+    return new Set(ALL_SELF_STAGES);
   });
   const [activeStatuses, setActiveStatuses] = useState(() => {
     if (lastFilter?.tab === 'maintenance' && lastFilter?.filters) {
@@ -136,11 +146,12 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
 
   // Auto-save last used filter whenever tab or filters change
   useEffect(() => {
-    const filters = activeTab === 'opportunity'
-      ? [...activeStages]
-      : [...activeStatuses];
+    let filters;
+    if (activeTab === 'opportunity') filters = [...activeStages];
+    else if (activeTab === 'self-consumption') filters = [...activeSelfStages];
+    else filters = [...activeStatuses];
     saveLastFilter({ tab: activeTab, filters });
-  }, [activeTab, activeStages, activeStatuses]);
+  }, [activeTab, activeStages, activeSelfStages, activeStatuses]);
 
   function toggleFilter(set, setter, allItems, value) {
     setter((prev) => {
@@ -158,9 +169,10 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
 
   const handleSavePreset = useCallback(() => {
     if (!presetName.trim()) return;
-    const filters = activeTab === 'opportunity'
-      ? [...activeStages]
-      : [...activeStatuses];
+    let filters;
+    if (activeTab === 'opportunity') filters = [...activeStages];
+    else if (activeTab === 'self-consumption') filters = [...activeSelfStages];
+    else filters = [...activeStatuses];
     const newPreset = {
       id: 'preset_' + Date.now(),
       name: presetName.trim(),
@@ -171,12 +183,14 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     setPresets(updated);
     setPresetName('');
     setShowPresetForm(false);
-  }, [presetName, activeTab, activeStages, activeStatuses, presets]);
+  }, [presetName, activeTab, activeStages, activeSelfStages, activeStatuses, presets]);
 
   const handleApplyPreset = useCallback((preset) => {
     setActiveTab(preset.tab);
     if (preset.tab === 'opportunity') {
       setActiveStages(new Set(preset.filters));
+    } else if (preset.tab === 'self-consumption') {
+      setActiveSelfStages(new Set(preset.filters));
     } else {
       setActiveStatuses(new Set(preset.filters));
     }
@@ -202,6 +216,21 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     });
   }, [searchText, activeStages, surveyConfirmedFilter, constructionConfirmedFilter]);
 
+  // Filtered self-consumption opportunities
+  const filteredSelf = useMemo(() => {
+    const q = searchText.toLowerCase();
+    return selfConsumption.filter((opp) => {
+      if (!activeSelfStages.has(opp.stage)) return false;
+      if (surveyConfirmedFilter !== null && !!opp.surveyConfirmed !== surveyConfirmedFilter) return false;
+      if (constructionConfirmedFilter !== null && !!opp.constructionDateConfirmed !== constructionConfirmedFilter) return false;
+      if (q) {
+        const hay = `${opp.name} ${opp.accountName || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [searchText, activeSelfStages, surveyConfirmedFilter, constructionConfirmedFilter]);
+
   // Filtered maintenances
   const filteredMaints = useMemo(() => {
     const q = searchText.toLowerCase();
@@ -216,20 +245,24 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     });
   }, [searchText, activeStatuses]);
 
-  const currentItems = activeTab === 'opportunity' ? filteredOpps : filteredMaints;
+  const currentItems = activeTab === 'opportunity' ? filteredOpps
+    : activeTab === 'self-consumption' ? filteredSelf
+    : filteredMaints;
+
+  const isOppTab = activeTab === 'opportunity' || activeTab === 'self-consumption';
 
   // Group items
   const grouped = useMemo(() => {
     const groups = {};
     for (const item of currentItems) {
-      const key = activeTab === 'opportunity'
+      const key = isOppTab
         ? (item.stage || '不明')
         : (item.status || '未設定');
       if (!groups[key]) groups[key] = [];
       groups[key].push(item);
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [currentItems, activeTab]);
+  }, [currentItems, isOppTab]);
 
   // Collapsed state
   if (collapsed) {
@@ -248,9 +281,16 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     );
   }
 
-  const activeFilterSet = activeTab === 'opportunity' ? activeStages : activeStatuses;
-  const allFilterItems = activeTab === 'opportunity' ? ALL_STAGES : ALL_MAINT_STATUSES;
-  const colorMap = activeTab === 'opportunity' ? STAGE_COLORS : MAINT_STATUS_COLORS;
+  const activeFilterSet = activeTab === 'opportunity' ? activeStages
+    : activeTab === 'self-consumption' ? activeSelfStages
+    : activeStatuses;
+  const setActiveFilterSet = activeTab === 'opportunity' ? setActiveStages
+    : activeTab === 'self-consumption' ? setActiveSelfStages
+    : setActiveStatuses;
+  const allFilterItems = activeTab === 'opportunity' ? ALL_STAGES
+    : activeTab === 'self-consumption' ? ALL_SELF_STAGES
+    : ALL_MAINT_STATUSES;
+  const colorMap = isOppTab ? STAGE_COLORS : MAINT_STATUS_COLORS;
 
   return (
     <aside className="fixed right-0 top-14 bottom-0 w-80 bg-white border-l border-gray-200 shadow-lg z-30 flex flex-col">
@@ -302,7 +342,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
           type="text"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          placeholder={activeTab === 'opportunity' ? '案件名・取引先で検索...' : '点検名・概要・種別で検索...'}
+          placeholder={isOppTab ? '案件名・取引先で検索...' : '点検名・概要・種別で検索...'}
           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
         />
       </div>
@@ -311,7 +351,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
       <div className="px-3 py-2 border-b border-gray-100">
         <div className="flex items-center gap-2 mb-1">
           <button
-            onClick={() => toggleAll(activeFilterSet, activeTab === 'opportunity' ? setActiveStages : setActiveStatuses, allFilterItems)}
+            onClick={() => toggleAll(activeFilterSet, setActiveFilterSet, allFilterItems)}
             className="text-xs text-blue-600 hover:text-blue-800 font-medium"
           >
             {activeFilterSet.size === allFilterItems.length ? '全解除' : '全選択'}
@@ -358,7 +398,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
             const isActive = activeFilterSet.has(item);
             let chipClasses = 'bg-gray-50 text-gray-400 border-gray-200';
             if (isActive) {
-              if (activeTab === 'opportunity') {
+              if (isOppTab) {
                 const prefix = item.substring(0, 2);
                 const c = colorMap[prefix] || {};
                 chipClasses = `${c.bg || 'bg-gray-100'} ${c.text || 'text-gray-700'} ${c.border || 'border-gray-300'}`;
@@ -370,17 +410,17 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
             return (
               <button
                 key={item}
-                onClick={() => toggleFilter(activeFilterSet, activeTab === 'opportunity' ? setActiveStages : setActiveStatuses, allFilterItems, item)}
+                onClick={() => toggleFilter(activeFilterSet, setActiveFilterSet, allFilterItems, item)}
                 className={`text-xs px-2 py-0.5 rounded-full border transition font-medium ${chipClasses}`}
               >
-                {activeTab === 'opportunity' ? item.substring(0, 2) : item}
+                {isOppTab ? item.substring(0, 2) : item}
               </button>
             );
           })}
         </div>
 
         {/* Confirmation flag filters (opportunities only) */}
-        {activeTab === 'opportunity' && (
+        {isOppTab && (
           <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-gray-100">
             <TriStateChip
               label="本現調確定"
@@ -409,7 +449,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
                 key={preset.id}
                 onClick={() => handleApplyPreset(preset)}
                 className="group inline-flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full border border-dashed border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100 transition font-medium"
-                title={`${preset.tab === 'opportunity' ? 'レンタル商談' : '点検／修繕'}: ${preset.filters.length}件のフィルター`}
+                title={`${preset.tab === 'opportunity' ? 'レンタル商談' : preset.tab === 'self-consumption' ? '自家消費' : '点検／修繕'}: ${preset.filters.length}件のフィルター`}
               >
                 <span>{preset.name}</span>
                 <span
