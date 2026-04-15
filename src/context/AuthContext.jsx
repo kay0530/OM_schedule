@@ -13,8 +13,8 @@ import {
 
 const AuthContext = createContext(null);
 
-// Only users from these domains are allowed. nstandard.info is for 瀬戸 (Gmail).
-const ALLOWED_EMAIL_DOMAINS = ['altenergy.co.jp', 'nstandard.info'];
+// Only users from these domains are allowed.
+const ALLOWED_EMAIL_DOMAINS = ['altenergy.co.jp'];
 
 function isAllowedAccount(acct) {
   const email = (acct?.username || '').toLowerCase();
