@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useCalendar } from '../../context/CalendarContext';
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../../services/graphCalendarService';
+import { buildEventBody } from '../../services/eventBodyTemplate';
 
 // Generate 30-minute interval options from 08:00 to 18:00
 const TIME_OPTIONS = [];
@@ -183,7 +184,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
               start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
               end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
               location: { displayName: event.address || '' },
-              body: { contentType: 'Text', content: event.scheduleMemo || '' },
+              body: { contentType: 'Text', content: buildEventBody(event.scheduleMemo || '') },
             };
             const result = await createCalendarEvent(token, memberEmail, eventData);
             if (!result.success) {

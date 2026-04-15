@@ -3,6 +3,7 @@ import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { createCalendarEvent } from '../../services/graphCalendarService';
+import { buildEventBody } from '../../services/eventBodyTemplate';
 
 /**
  * Modal dialog for assigning a job (opportunity or maintenance) to member(s).
@@ -125,19 +126,20 @@ export default function AssignModal({
             if (!token) {
               outlookResults.push({ member: member.nameJa, success: false, error: 'トークン取得失敗' });
             } else {
+              const bodyContent = buildEventBody(opportunity.scheduleMemo || opportunity.content || '');
               const eventData = isAllDay ? {
                 subject: displayName,
                 isAllDay: true,
                 start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
                 end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
                 location: { displayName: opportunity.address || '' },
-                body: { contentType: 'Text', content: opportunity.scheduleMemo || opportunity.content || '' },
+                body: { contentType: 'Text', content: bodyContent },
               } : {
                 subject: displayName,
                 start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
                 end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
                 location: { displayName: opportunity.address || '' },
-                body: { contentType: 'Text', content: opportunity.scheduleMemo || opportunity.content || '' },
+                body: { contentType: 'Text', content: bodyContent },
               };
               const result = await createCalendarEvent(token, member.email, eventData);
               outlookResults.push({ member: member.nameJa, success: result.success, error: result.error });
