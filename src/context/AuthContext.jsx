@@ -13,6 +13,14 @@ import {
 
 const AuthContext = createContext(null);
 
+// Only users from these domains are allowed. nstandard.info is for 瀬戸 (Gmail).
+const ALLOWED_EMAIL_DOMAINS = ['altenergy.co.jp', 'nstandard.info'];
+
+function isAllowedAccount(acct) {
+  const email = (acct?.username || '').toLowerCase();
+  return ALLOWED_EMAIL_DOMAINS.some((d) => email.endsWith('@' + d));
+}
+
 export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [account, setAccount] = useState(null);
@@ -41,6 +49,13 @@ export function AuthProvider({ children }) {
         // Handle redirect response (returning from login redirect)
         const redirectResult = await handleRedirectResponse(instance);
         if (redirectResult && redirectResult.account) {
+          if (!isAllowedAccount(redirectResult.account)) {
+            await msalLogout(instance, redirectResult.account);
+            setError('このアプリはAltenergy社員専用です。許可されたアカウントでサインインしてください。');
+            setMsalInstance(instance);
+            setLoading(false);
+            return;
+          }
           instance.setActiveAccount(redirectResult.account);
           setAccount(redirectResult.account);
           setIsAuthenticated(true);
@@ -52,9 +67,14 @@ export function AuthProvider({ children }) {
         // Check for existing accounts (already logged in)
         const accounts = instance.getAllAccounts();
         if (accounts.length > 0) {
-          instance.setActiveAccount(accounts[0]);
-          setAccount(accounts[0]);
-          setIsAuthenticated(true);
+          if (isAllowedAccount(accounts[0])) {
+            instance.setActiveAccount(accounts[0]);
+            setAccount(accounts[0]);
+            setIsAuthenticated(true);
+          } else {
+            await msalLogout(instance, accounts[0]);
+            setError('このアプリはAltenergy社員専用です。');
+          }
         }
 
         setMsalInstance(instance);
