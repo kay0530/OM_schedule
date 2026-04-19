@@ -354,13 +354,14 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                       onDragOver={(e) => { e.preventDefault(); setDragOverCell(cellKey); }}
                       onDragLeave={handleDragLeave}
                       onDrop={(e) => handleDeliveryDrop(e, member.id)}
+                      onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(dateStr, '08:00', member.id, { isDelivery: true })}
                     >
                       {deliveries.map((d) => (
                         <div
                           key={d.id}
                           className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer bg-orange-100 border-l-2 border-orange-500 text-orange-700"
                           title={d.opportunityName}
-                          onClick={() => onEventClick(d)}
+                          onClick={(e) => { e.stopPropagation(); onEventClick(d); }}
                         >
                           {d.opportunityName?.replace('【納品】', '')}
                         </div>

@@ -48,10 +48,10 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
     borderColor = '#9CA3AF';
     textColor = '#6B7280';
   } else {
-    // Outlook / calendar event
-    bgColor = '#F3F4F6';
-    borderColor = '#D1D5DB';
-    textColor = '#374151';
+    // Outlook / calendar event — use member color (lighter tint) for consistency
+    bgColor = memberColor ? `${memberColor}26` : '#F3F4F6';
+    borderColor = memberColor || '#D1D5DB';
+    textColor = memberColor || '#374151';
   }
 
   const title = event.opportunityName || event.title || event.statusLabel || '';

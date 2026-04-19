@@ -18,7 +18,7 @@ for (let h = 0; h <= 24; h++) {
   }
 }
 
-export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime, presetMemberId, presetAllDay }) {
+export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime, presetMemberId, presetAllDay, presetIsDelivery }) {
   const { dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
 
@@ -28,6 +28,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
   const [endTime, setEndTime] = useState('17:00');
   const [memberId, setMemberId] = useState('');
   const [isAllDay, setIsAllDay] = useState(false);
+  const [isDelivery, setIsDelivery] = useState(false);
   const [location, setLocation] = useState('');
   const [memo, setMemo] = useState('');
   const [syncOutlook, setSyncOutlook] = useState(true);
@@ -43,12 +44,13 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
       setEndTime(`${String(Math.min(startH + 1, 24)).padStart(2, '0')}:00`);
       setMemberId(presetMemberId || '');
       setIsAllDay(presetAllDay || false);
+      setIsDelivery(presetIsDelivery || false);
       setLocation('');
       setMemo('');
       setSyncOutlook(true);
       setSaving(false);
     }
-  }, [isOpen, presetDate, presetTime, presetMemberId]);
+  }, [isOpen, presetDate, presetTime, presetMemberId, presetAllDay, presetIsDelivery]);
 
   if (!isOpen) return null;
 
@@ -60,17 +62,19 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
 
     setSaving(true);
 
+    const finalTitle = isDelivery ? `【納品】${title.trim()}` : title.trim();
     dispatch({
       type: 'ADD_ASSIGNMENT',
       payload: {
         sourceType: 'manual',
         opportunityId: null,
-        opportunityName: title.trim(),
+        opportunityName: finalTitle,
         memberId,
         date,
-        startTime: isAllDay ? '00:00' : startTime,
-        endTime: isAllDay ? '24:00' : endTime,
-        isAllDay,
+        startTime: isDelivery ? '08:00' : (isAllDay ? '00:00' : startTime),
+        endTime: isDelivery ? '17:00' : (isAllDay ? '24:00' : endTime),
+        isAllDay: isDelivery ? false : isAllDay,
+        isDelivery,
         syncOutlook,
         address: location,
         scheduleMemo: memo,
@@ -85,17 +89,19 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
           const token = await getToken();
           if (token) {
             const bodyContent = buildEventBody(memo);
-            const eventData = isAllDay ? {
-              subject: title.trim(),
+            const effStart = isDelivery ? '08:00' : startTime;
+            const effEnd = isDelivery ? '17:00' : endTime;
+            const eventData = (isAllDay && !isDelivery) ? {
+              subject: finalTitle,
               isAllDay: true,
               start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
               end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
               location: { displayName: location },
               body: { contentType: 'Text', content: bodyContent },
             } : {
-              subject: title.trim(),
-              start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
+              subject: finalTitle,
+              start: { dateTime: `${date}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${date}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
               location: { displayName: location },
               body: { contentType: 'Text', content: bodyContent },
             };
@@ -118,7 +124,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-orange-50 rounded-t-xl">
-            <h2 className="text-base font-bold text-gray-800">予定を追加</h2>
+            <h2 className="text-base font-bold text-gray-800">{isDelivery ? '納品予定を追加' : '予定を追加'}</h2>
             <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-200">
               <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

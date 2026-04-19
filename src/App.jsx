@@ -110,7 +110,7 @@ function AppInner() {
       handleSlotClick(date, time, memberId);
       return;
     }
-    setQuickAddPresets({ presetDate: date, presetTime: time, presetMemberId: memberId, presetAllDay: options?.isAllDay || false });
+    setQuickAddPresets({ presetDate: date, presetTime: time, presetMemberId: memberId, presetAllDay: options?.isAllDay || false, presetIsDelivery: options?.isDelivery || false });
     setQuickAddOpen(true);
   }
 
@@ -258,6 +258,7 @@ function AppInner() {
         presetTime={quickAddPresets.presetTime}
         presetMemberId={quickAddPresets.presetMemberId}
         presetAllDay={quickAddPresets.presetAllDay}
+        presetIsDelivery={quickAddPresets.presetIsDelivery}
       />
     </>
   );
