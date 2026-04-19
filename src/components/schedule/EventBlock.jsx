@@ -8,7 +8,7 @@ import { timeStringToMinutes } from '../../utils/dateUtils';
  *
  * @param {{ event: object, hourHeight: number, startHour: number, memberColor?: string, onClick?: (event) => void, onResizeEnd?: (event, newEndTime: string) => void }}
  */
-export default function EventBlock({ event, hourHeight, startHour, memberColor, onClick, onDoubleClick, onResizeEnd, isActive }) {
+export default function EventBlock({ event, hourHeight, startHour, memberColor, onClick, onDoubleClick, onResizeEnd, isActive, colorOutlook = true }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [resizeDeltaPx, setResizeDeltaPx] = useState(0);
   const [isResizing, setIsResizing] = useState(false);
@@ -47,11 +47,16 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
     bgColor = '#F3F4F6';
     borderColor = '#9CA3AF';
     textColor = '#6B7280';
-  } else {
+  } else if (colorOutlook && memberColor) {
     // Outlook / calendar event — use member color (lighter tint) for consistency
-    bgColor = memberColor ? `${memberColor}26` : '#F3F4F6';
-    borderColor = memberColor || '#D1D5DB';
-    textColor = memberColor || '#374151';
+    bgColor = `${memberColor}26`;
+    borderColor = memberColor;
+    textColor = memberColor;
+  } else {
+    // Outlook / calendar event — classic grey
+    bgColor = '#F3F4F6';
+    borderColor = '#D1D5DB';
+    textColor = '#374151';
   }
 
   const title = event.opportunityName || event.title || event.statusLabel || '';

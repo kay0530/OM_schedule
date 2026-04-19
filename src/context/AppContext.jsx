@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
 const DEFAULT_SETTINGS = {
   workingHours: { start: '08:00', end: '18:00' },
   showWeekends: false,
+  colorOutlookEvents: true,
 };
 
 /**

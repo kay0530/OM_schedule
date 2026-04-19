@@ -51,6 +51,11 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
 
+  const colorOutlookEvents = settings.colorOutlookEvents ?? true;
+  function toggleColorOutlook() {
+    dispatch({ type: 'UPDATE_SETTINGS', payload: { colorOutlookEvents: !colorOutlookEvents } });
+  }
+
   const scrollRef = useRef(null);
   const hasAutoScrolled = useRef(false);
 
@@ -427,6 +432,19 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
             人軸
           </button>
         </div>
+
+        {/* Outlook event color toggle */}
+        <button
+          onClick={toggleColorOutlook}
+          className={`text-xs px-3 py-1 font-medium rounded-lg border transition-colors ${
+            colorOutlookEvents
+              ? 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100'
+              : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+          }`}
+          title="Outlook予定の色表示を切替"
+        >
+          {colorOutlookEvents ? '🎨 Outlook色付き' : '⚪ Outlook無色'}
+        </button>
       </div>
 
       {/* Member filter chips */}
@@ -717,6 +735,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                   hourHeight={HOUR_HEIGHT}
                                   startHour={START_HOUR}
                                   memberColor={member.color}
+                                  colorOutlook={settings.colorOutlookEvents ?? true}
                                   onClick={onEventClick}
                                   onDoubleClick={onEventDoubleClick}
                                   isActive={activeEventId === event.id}
@@ -731,6 +750,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                   hourHeight={HOUR_HEIGHT}
                                   startHour={START_HOUR}
                                   memberColor={member.color}
+                                  colorOutlook={settings.colorOutlookEvents ?? true}
                                   onClick={onEventClick}
                                   onDoubleClick={onEventDoubleClick}
                                   isActive={activeEventId === assignment.id}
@@ -984,6 +1004,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 hourHeight={HOUR_HEIGHT}
                                 startHour={START_HOUR}
                                 memberColor={member.color}
+                                colorOutlook={settings.colorOutlookEvents ?? true}
                                 onClick={onEventClick}
                                 onDoubleClick={onEventDoubleClick}
                                 isActive={activeEventId === event.id}
@@ -998,6 +1019,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 hourHeight={HOUR_HEIGHT}
                                 startHour={START_HOUR}
                                 memberColor={member.color}
+                                colorOutlook={settings.colorOutlookEvents ?? true}
                                 onClick={onEventClick}
                                 onDoubleClick={onEventDoubleClick}
                                 isActive={activeEventId === assignment.id}

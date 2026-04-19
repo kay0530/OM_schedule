@@ -28,7 +28,7 @@ function detectStatusType(title) {
 
 export default function DailyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, activeEventId, onSlotClick, onSlotDoubleClick }) {
   const { events, loading } = useCalendar();
-  const { assignments, dispatch } = useApp();
+  const { assignments, settings, dispatch } = useApp();
 
   const scrollRef = useRef(null);
   const hasAutoScrolled = useRef(false);
@@ -490,6 +490,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                         hourHeight={HOUR_HEIGHT}
                         startHour={START_HOUR}
                         memberColor={member.color}
+                        colorOutlook={settings.colorOutlookEvents ?? true}
                         onClick={onEventClick}
                         onDoubleClick={onEventDoubleClick}
                         isActive={activeEventId === event.id}
@@ -504,6 +505,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                         hourHeight={HOUR_HEIGHT}
                         startHour={START_HOUR}
                         memberColor={member.color}
+                        colorOutlook={settings.colorOutlookEvents ?? true}
                         onClick={onEventClick}
                         onDoubleClick={onEventDoubleClick}
                         isActive={activeEventId === assignment.id}
