@@ -49,13 +49,24 @@ function loadInitialState() {
 function appReducer(state, action) {
   switch (action.type) {
     case 'ADD_ASSIGNMENT': {
-      const { id: _ignoreId, ...payloadWithoutId } = action.payload;
+      const payload = action.payload;
       const newAssignment = {
-        id: `assign_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: payload.id || `assign_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         isOutlookSynced: false,
-        ...payloadWithoutId,
+        ...payload,
       };
       return { ...state, assignments: [...state.assignments, newAssignment] };
+    }
+
+    case 'UPDATE_ASSIGNMENTS_BULK': {
+      const { ids, updates } = action.payload;
+      const idSet = new Set(ids);
+      return {
+        ...state,
+        assignments: state.assignments.map((a) =>
+          idSet.has(a.id) ? { ...a, ...updates } : a
+        ),
+      };
     }
 
     case 'UPDATE_ASSIGNMENT': {

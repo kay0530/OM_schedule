@@ -63,6 +63,39 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
     setSaving(true);
 
     const finalTitle = isDelivery ? `【納品】${title.trim()}` : title.trim();
+
+    // Create Outlook event FIRST to capture the returned ID
+    let outlookEventId = null;
+    const member = MEMBERS.find((m) => m.id === memberId);
+    if (syncOutlook && isAuthenticated && member && !member.skipOutlookSync) {
+      try {
+        const token = await getToken();
+        if (token) {
+          const bodyContent = buildEventBody(memo);
+          const effStart = isDelivery ? '08:00' : startTime;
+          const effEnd = isDelivery ? '17:00' : endTime;
+          const eventData = (isAllDay && !isDelivery) ? {
+            subject: finalTitle,
+            isAllDay: true,
+            start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: location },
+            body: { contentType: 'Text', content: bodyContent },
+          } : {
+            subject: finalTitle,
+            start: { dateTime: `${date}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${date}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: location },
+            body: { contentType: 'Text', content: bodyContent },
+          };
+          const result = await createCalendarEvent(token, member.email, eventData);
+          if (result.success) outlookEventId = result.data?.id || null;
+        }
+      } catch (err) {
+        console.error('Outlook event creation failed:', err);
+      }
+    }
+
     dispatch({
       type: 'ADD_ASSIGNMENT',
       payload: {
@@ -70,6 +103,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
         opportunityId: null,
         opportunityName: finalTitle,
         memberId,
+        memberEmail: member?.email || null,
         date,
         startTime: isDelivery ? '08:00' : (isAllDay ? '00:00' : startTime),
         endTime: isDelivery ? '17:00' : (isAllDay ? '24:00' : endTime),
@@ -78,40 +112,9 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
         syncOutlook,
         address: location,
         scheduleMemo: memo,
+        outlookEventId,
       },
     });
-
-    // Create Outlook event on the target member's calendar (not logged-in user's)
-    if (syncOutlook && isAuthenticated) {
-      try {
-        const member = MEMBERS.find((m) => m.id === memberId);
-        if (member && !member.skipOutlookSync) {
-          const token = await getToken();
-          if (token) {
-            const bodyContent = buildEventBody(memo);
-            const effStart = isDelivery ? '08:00' : startTime;
-            const effEnd = isDelivery ? '17:00' : endTime;
-            const eventData = (isAllDay && !isDelivery) ? {
-              subject: finalTitle,
-              isAllDay: true,
-              start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: location },
-              body: { contentType: 'Text', content: bodyContent },
-            } : {
-              subject: finalTitle,
-              start: { dateTime: `${date}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${date}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: location },
-              body: { contentType: 'Text', content: bodyContent },
-            };
-            await createCalendarEvent(token, member.email, eventData);
-          }
-        }
-      } catch (err) {
-        console.error('Outlook event creation failed:', err);
-      }
-    }
 
     setSaving(false);
     onClose();

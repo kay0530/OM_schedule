@@ -93,30 +93,16 @@ export default function AssignModal({
     const isMaint = opportunity.type === 'maintenance';
     const outlookResults = [];
 
+    // Group ID shared across all members for this assignment batch
+    const groupId = selectedMembers.length > 1
+      ? `group_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+      : null;
+
     for (const memberId of selectedMembers) {
       const member = MEMBERS.find((m) => m.id === memberId);
-      const assignmentPayload = {
-        sourceType: opportunity.type || 'opportunity',
-        opportunityId: opportunity.id,
-        opportunityName: displayName,
-        accountName: isMaint ? null : opportunity.accountName,
-        summary: isMaint ? opportunity.summary : null,
-        category: opportunity.category || null,
-        status: isMaint ? opportunity.status : opportunity.stage,
-        memberId,
-        date,
-        startTime: isAllDay ? '00:00' : startTime,
-        endTime: isAllDay ? '24:00' : endTime,
-        isAllDay,
-        syncOutlook,
-        stage: isMaint ? null : opportunity.stage,
-        address: opportunity.address,
-        scheduleMemo: isMaint ? opportunity.content : opportunity.scheduleMemo,
-      };
 
-      dispatch({ type: 'ADD_ASSIGNMENT', payload: assignmentPayload });
-
-      // Create Outlook event on the member's calendar directly
+      // Create Outlook event FIRST so we can store the returned ID on the assignment
+      let outlookEventId = null;
       if (syncOutlook && member && !member.skipOutlookSync) {
         if (!isAuthenticated) {
           outlookResults.push({ member: member.nameJa, success: false, error: 'MS365未ログイン' });
@@ -142,6 +128,7 @@ export default function AssignModal({
                 body: { contentType: 'Text', content: bodyContent },
               };
               const result = await createCalendarEvent(token, member.email, eventData);
+              if (result.success) outlookEventId = result.data?.id || null;
               outlookResults.push({ member: member.nameJa, success: result.success, error: result.error });
             }
           } catch (err) {
@@ -149,6 +136,30 @@ export default function AssignModal({
           }
         }
       }
+
+      const assignmentPayload = {
+        sourceType: opportunity.type || 'opportunity',
+        opportunityId: opportunity.id,
+        opportunityName: displayName,
+        accountName: isMaint ? null : opportunity.accountName,
+        summary: isMaint ? opportunity.summary : null,
+        category: opportunity.category || null,
+        status: isMaint ? opportunity.status : opportunity.stage,
+        memberId,
+        memberEmail: member?.email || null,
+        date,
+        startTime: isAllDay ? '00:00' : startTime,
+        endTime: isAllDay ? '24:00' : endTime,
+        isAllDay,
+        syncOutlook,
+        stage: isMaint ? null : opportunity.stage,
+        address: opportunity.address,
+        scheduleMemo: isMaint ? opportunity.content : opportunity.scheduleMemo,
+        outlookEventId,
+        groupId,
+      };
+
+      dispatch({ type: 'ADD_ASSIGNMENT', payload: assignmentPayload });
     }
 
     setSaving(false);

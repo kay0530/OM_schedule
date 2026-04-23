@@ -19,7 +19,7 @@ for (let h = 8; h <= 18; h++) {
  * @param {{ isOpen: boolean, onClose: () => void, event: object|null }}
  */
 export default function EventDetailModal({ isOpen, onClose, event }) {
-  const { dispatch } = useApp();
+  const { assignments, dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
   const { events, setEvents } = useCalendar();
 
@@ -34,7 +34,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
   const [editStartTime, setEditStartTime] = useState('08:00');
   const [editEndTime, setEditEndTime] = useState('09:00');
   const [editMemberId, setEditMemberId] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editMemo, setEditMemo] = useState('');
   const [syncToOutlook, setSyncToOutlook] = useState(false);
+  const [applyToGroup, setApplyToGroup] = useState(true);
 
   // Reset state when event changes or modal opens
   useEffect(() => {
@@ -53,7 +56,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setEditStartTime(startTime);
       setEditEndTime(endTime);
       setEditMemberId(event.memberId || '');
+      setEditLocation(event.address || event.location || '');
+      setEditMemo(event.scheduleMemo || '');
       setSyncToOutlook(false);
+      setApplyToGroup(true);
     }
   }, [event, isOpen]);
 
@@ -109,7 +115,15 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     setEditStartTime(st);
     setEditEndTime(et);
     setEditMemberId(event.memberId || '');
+    setEditLocation(event.address || event.location || '');
+    setEditMemo(event.scheduleMemo || '');
   }
+
+  // Find group siblings (same groupId, excluding this event)
+  const groupSiblings = event?.groupId
+    ? assignments.filter((a) => a.groupId === event.groupId && a.id !== event.id)
+    : [];
+  const hasGroup = groupSiblings.length > 0;
 
   async function handleSave() {
     if (!editTitle.trim()) {
@@ -129,70 +143,119 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     setError(null);
 
     try {
+      const selectedMember = MEMBERS.find((m) => m.id === editMemberId);
+
       if (isManualAssignment) {
-        // Update assignment via AppContext
-        const selectedMember = MEMBERS.find((m) => m.id === editMemberId);
-        dispatch({
-          type: 'UPDATE_ASSIGNMENT',
-          payload: {
-            id: event.id,
+        // Common updates (applied to this event — memberId stays per-entry for group)
+        const selfUpdates = {
+          opportunityName: editTitle,
+          title: editTitle,
+          date: editDate,
+          startTime: editStartTime,
+          endTime: editEndTime,
+          memberId: editMemberId,
+          memberEmail: selectedMember?.email || event.memberEmail,
+          address: editLocation,
+          scheduleMemo: editMemo,
+        };
+        dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: event.id, ...selfUpdates } });
+
+        // Propagate to group siblings (keep their own memberId / memberEmail / outlookEventId)
+        if (applyToGroup && hasGroup) {
+          const sharedUpdates = {
             opportunityName: editTitle,
             title: editTitle,
             date: editDate,
             startTime: editStartTime,
             endTime: editEndTime,
-            memberId: editMemberId,
-            memberEmail: selectedMember?.email || event.memberEmail,
-          },
-        });
+            address: editLocation,
+            scheduleMemo: editMemo,
+          };
+          dispatch({
+            type: 'UPDATE_ASSIGNMENTS_BULK',
+            payload: { ids: groupSiblings.map((s) => s.id), updates: sharedUpdates },
+          });
+        }
       }
 
       // Sync to Outlook if checkbox is checked and user is authenticated
       if (syncToOutlook && isAuthenticated) {
         const token = await getToken();
-        const selectedMember = MEMBERS.find((m) => m.id === editMemberId) || member;
-        const memberEmail = selectedMember?.email;
 
-        if (memberEmail && !selectedMember?.skipOutlookSync) {
-          const hasExistingOutlookEvent = isOutlook || event.outlookEventId;
+        // Build list of (assignment, member) targets
+        const targets = [];
+        // Primary (this event)
+        {
+          const primaryOutlookId = isOutlook ? event.id : event.outlookEventId;
+          targets.push({
+            assignmentId: event.id,
+            memberEmail: selectedMember?.email || event.memberEmail || member?.email,
+            skipSync: selectedMember?.skipOutlookSync,
+            outlookEventId: primaryOutlookId,
+          });
+        }
+        if (applyToGroup && hasGroup && isManualAssignment) {
+          for (const sib of groupSiblings) {
+            const sibMember = MEMBERS.find((m) => m.id === sib.memberId);
+            targets.push({
+              assignmentId: sib.id,
+              memberEmail: sibMember?.email || sib.memberEmail,
+              skipSync: sibMember?.skipOutlookSync,
+              outlookEventId: sib.outlookEventId,
+            });
+          }
+        }
 
-          if (hasExistingOutlookEvent) {
+        const outlookErrors = [];
+        for (const t of targets) {
+          if (!t.memberEmail || t.skipSync) continue;
+          if (t.outlookEventId) {
             // Update existing Outlook event
-            const eventId = event.id || event.outlookEventId;
             const updates = {
               subject: editTitle,
               start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
               end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
+              location: { displayName: editLocation || '' },
+              body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
             };
-            const result = await updateCalendarEvent(token, memberEmail, eventId, updates);
+            const result = await updateCalendarEvent(token, t.memberEmail, t.outlookEventId, updates);
             if (!result.success) {
-              setError(`Outlook更新エラー: ${result.error}`);
-              setSaving(false);
-              return;
+              outlookErrors.push(`${t.memberEmail}: ${result.error}`);
+            } else if (isOutlook && t.outlookEventId === event.id) {
+              // Refresh in-memory Outlook event cache
+              setEvents(
+                events.map((e) =>
+                  e.id === t.outlookEventId
+                    ? { ...e, title: editTitle, start: `${editDate}T${editStartTime}:00`, end: `${editDate}T${editEndTime}:00`, location: editLocation }
+                    : e
+                )
+              );
             }
-            setEvents(
-              events.map((e) =>
-                e.id === eventId
-                  ? { ...e, title: editTitle, start: `${editDate}T${editStartTime}:00`, end: `${editDate}T${editEndTime}:00` }
-                  : e
-              )
-            );
           } else {
-            // Create new Outlook event
+            // Create new Outlook event and store ID back on the assignment
             const eventData = {
               subject: editTitle,
               start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
               end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: event.address || '' },
-              body: { contentType: 'Text', content: buildEventBody(event.scheduleMemo || '') },
+              location: { displayName: editLocation || '' },
+              body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
             };
-            const result = await createCalendarEvent(token, memberEmail, eventData);
+            const result = await createCalendarEvent(token, t.memberEmail, eventData);
             if (!result.success) {
-              setError(`Outlook登録エラー: ${result.error}`);
-              setSaving(false);
-              return;
+              outlookErrors.push(`${t.memberEmail}: ${result.error}`);
+            } else if (result.data?.id && t.assignmentId) {
+              dispatch({
+                type: 'UPDATE_ASSIGNMENT',
+                payload: { id: t.assignmentId, outlookEventId: result.data.id },
+              });
             }
           }
+        }
+
+        if (outlookErrors.length > 0) {
+          setError(`Outlook同期エラー:\n${outlookErrors.join('\n')}`);
+          setSaving(false);
+          return;
         }
       }
 
@@ -369,6 +432,45 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     ))}
                   </select>
                 </div>
+
+                {/* Location */}
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">場所</label>
+                  <input
+                    type="text"
+                    value={editLocation}
+                    onChange={(e) => setEditLocation(e.target.value)}
+                    placeholder="場所（任意）"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+
+                {/* Memo */}
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">メモ</label>
+                  <textarea
+                    value={editMemo}
+                    onChange={(e) => setEditMemo(e.target.value)}
+                    rows={3}
+                    placeholder="メモ（任意）"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y"
+                  />
+                </div>
+
+                {/* Group sync toggle */}
+                {hasGroup && (
+                  <label className="flex items-center gap-2 cursor-pointer bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={applyToGroup}
+                      onChange={(e) => setApplyToGroup(e.target.checked)}
+                      className="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500"
+                    />
+                    <span className="text-sm text-amber-800">
+                      同じ案件の他メンバー({groupSiblings.length}名)にも反映
+                    </span>
+                  </label>
+                )}
 
                 {/* Outlook sync checkbox */}
                 {isAuthenticated && (
