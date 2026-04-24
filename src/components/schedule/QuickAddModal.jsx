@@ -26,7 +26,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
-  const [memberId, setMemberId] = useState('');
+  const [selectedMembers, setSelectedMembers] = useState([]);
   const [isAllDay, setIsAllDay] = useState(false);
   const [isDelivery, setIsDelivery] = useState(false);
   const [location, setLocation] = useState('');
@@ -42,7 +42,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
       // Default 1 hour duration
       const startH = parseInt(presetTime?.substring(0, 2) || '9');
       setEndTime(`${String(Math.min(startH + 1, 24)).padStart(2, '0')}:00`);
-      setMemberId(presetMemberId || '');
+      setSelectedMembers(presetMemberId ? [presetMemberId] : []);
       setIsAllDay(presetAllDay || false);
       setIsDelivery(presetIsDelivery || false);
       setLocation('');
@@ -54,69 +54,90 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
 
   if (!isOpen) return null;
 
+  function toggleMember(id) {
+    setSelectedMembers((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+    );
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!title.trim()) { alert('件名を入力してください。'); return; }
     if (!date) { alert('日付を入力してください。'); return; }
-    if (!memberId) { alert('担当者を選択してください。'); return; }
+    if (selectedMembers.length === 0) { alert('担当者を1名以上選択してください。'); return; }
 
     setSaving(true);
 
     const finalTitle = isDelivery ? `【納品】${title.trim()}` : title.trim();
+    const effStart = isDelivery ? '08:00' : (isAllDay ? '00:00' : startTime);
+    const effEnd = isDelivery ? '17:00' : (isAllDay ? '24:00' : endTime);
+    const effAllDay = isDelivery ? false : isAllDay;
 
-    // Create Outlook event FIRST to capture the returned ID
-    let outlookEventId = null;
-    const member = MEMBERS.find((m) => m.id === memberId);
-    if (syncOutlook && isAuthenticated && member && !member.skipOutlookSync) {
-      try {
-        const token = await getToken();
-        if (token) {
-          const bodyContent = buildEventBody(memo);
-          const effStart = isDelivery ? '08:00' : startTime;
-          const effEnd = isDelivery ? '17:00' : endTime;
-          const eventData = (isAllDay && !isDelivery) ? {
-            subject: finalTitle,
-            isAllDay: true,
-            start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-            end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-            location: { displayName: location },
-            body: { contentType: 'Text', content: bodyContent },
-          } : {
-            subject: finalTitle,
-            start: { dateTime: `${date}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
-            end: { dateTime: `${date}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
-            location: { displayName: location },
-            body: { contentType: 'Text', content: bodyContent },
-          };
-          const result = await createCalendarEvent(token, member.email, eventData);
-          if (result.success) outlookEventId = result.data?.id || null;
+    const groupId = selectedMembers.length > 1
+      ? `group_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+      : null;
+
+    const outlookErrors = [];
+
+    for (const memberId of selectedMembers) {
+      const member = MEMBERS.find((m) => m.id === memberId);
+
+      // Create Outlook event FIRST to capture returned ID
+      let outlookEventId = null;
+      if (syncOutlook && isAuthenticated && member && !member.skipOutlookSync) {
+        try {
+          const token = await getToken();
+          if (token) {
+            const bodyContent = buildEventBody(memo);
+            const eventData = effAllDay ? {
+              subject: finalTitle,
+              isAllDay: true,
+              start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+              location: { displayName: location },
+              body: { contentType: 'Text', content: bodyContent },
+            } : {
+              subject: finalTitle,
+              start: { dateTime: `${date}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${date}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
+              location: { displayName: location },
+              body: { contentType: 'Text', content: bodyContent },
+            };
+            const result = await createCalendarEvent(token, member.email, eventData);
+            if (result.success) outlookEventId = result.data?.id || null;
+            else outlookErrors.push(`${member.nameJa}: ${result.error}`);
+          }
+        } catch (err) {
+          outlookErrors.push(`${member?.nameJa || memberId}: ${err.message}`);
         }
-      } catch (err) {
-        console.error('Outlook event creation failed:', err);
       }
+
+      dispatch({
+        type: 'ADD_ASSIGNMENT',
+        payload: {
+          sourceType: 'manual',
+          opportunityId: null,
+          opportunityName: finalTitle,
+          memberId,
+          memberEmail: member?.email || null,
+          date,
+          startTime: effStart,
+          endTime: effEnd,
+          isAllDay: effAllDay,
+          isDelivery,
+          syncOutlook,
+          address: location,
+          scheduleMemo: memo,
+          outlookEventId,
+          groupId,
+        },
+      });
     }
 
-    dispatch({
-      type: 'ADD_ASSIGNMENT',
-      payload: {
-        sourceType: 'manual',
-        opportunityId: null,
-        opportunityName: finalTitle,
-        memberId,
-        memberEmail: member?.email || null,
-        date,
-        startTime: isDelivery ? '08:00' : (isAllDay ? '00:00' : startTime),
-        endTime: isDelivery ? '17:00' : (isAllDay ? '24:00' : endTime),
-        isAllDay: isDelivery ? false : isAllDay,
-        isDelivery,
-        syncOutlook,
-        address: location,
-        scheduleMemo: memo,
-        outlookEventId,
-      },
-    });
-
     setSaving(false);
+    if (outlookErrors.length > 0) {
+      alert(`予定を追加しました。\nOutlook同期エラー:\n${outlookErrors.join('\n')}`);
+    }
     onClose();
   }
 
@@ -146,17 +167,35 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
               autoFocus
             />
 
-            {/* Member */}
-            <select
-              value={memberId}
-              onChange={(e) => setMemberId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-            >
-              <option value="">担当者を選択</option>
-              {MEMBERS.map((m) => (
-                <option key={m.id} value={m.id}>{m.nameJa}</option>
-              ))}
-            </select>
+            {/* Members (multi-select) */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">
+                担当者 <span className="text-red-500">*</span>
+                {selectedMembers.length > 0 && (
+                  <span className="ml-2 text-orange-600">({selectedMembers.length}名選択中)</span>
+                )}
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {MEMBERS.map((m) => {
+                  const isSelected = selectedMembers.includes(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => toggleMember(m.id)}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm transition ${
+                        isSelected
+                          ? 'border-orange-500 bg-orange-50 text-orange-800 ring-1 ring-orange-500'
+                          : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
+                      {m.nameJa}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Date */}
             <input
