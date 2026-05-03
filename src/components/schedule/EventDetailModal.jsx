@@ -33,11 +33,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
   const [editDate, setEditDate] = useState('');
   const [editStartTime, setEditStartTime] = useState('08:00');
   const [editEndTime, setEditEndTime] = useState('09:00');
-  const [editMemberId, setEditMemberId] = useState('');
+  const [editMemberIds, setEditMemberIds] = useState([]);
   const [editLocation, setEditLocation] = useState('');
   const [editMemo, setEditMemo] = useState('');
   const [syncToOutlook, setSyncToOutlook] = useState(false);
-  const [applyToGroup, setApplyToGroup] = useState(true);
 
   // Reset state when event changes or modal opens
   useEffect(() => {
@@ -55,13 +54,16 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setEditDate(eventDate);
       setEditStartTime(startTime);
       setEditEndTime(endTime);
-      setEditMemberId(event.memberId || '');
+      // Pre-select all group members (or just self for non-group events)
+      const groupMemberIds = event.groupId
+        ? assignments.filter((a) => a.groupId === event.groupId).map((a) => a.memberId)
+        : (event.memberId ? [event.memberId] : []);
+      setEditMemberIds([...new Set(groupMemberIds)]);
       setEditLocation(event.address || event.location || '');
       setEditMemo(event.scheduleMemo || '');
       setSyncToOutlook(false);
-      setApplyToGroup(true);
     }
-  }, [event, isOpen]);
+  }, [event, isOpen, assignments]);
 
   if (!isOpen || !event) return null;
 
@@ -114,16 +116,24 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     setEditDate(ed);
     setEditStartTime(st);
     setEditEndTime(et);
-    setEditMemberId(event.memberId || '');
+    const groupMemberIds = event.groupId
+      ? assignments.filter((a) => a.groupId === event.groupId).map((a) => a.memberId)
+      : (event.memberId ? [event.memberId] : []);
+    setEditMemberIds([...new Set(groupMemberIds)]);
     setEditLocation(event.address || event.location || '');
     setEditMemo(event.scheduleMemo || '');
   }
 
-  // Find group siblings (same groupId, excluding this event)
-  const groupSiblings = event?.groupId
-    ? assignments.filter((a) => a.groupId === event.groupId && a.id !== event.id)
-    : [];
-  const hasGroup = groupSiblings.length > 0;
+  function toggleEditMember(id) {
+    setEditMemberIds((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+    );
+  }
+
+  // Current group members (all assignments sharing groupId, OR just self if no group)
+  const groupAssignments = event?.groupId
+    ? assignments.filter((a) => a.groupId === event.groupId)
+    : (isManualAssignment ? [event] : []);
 
   async function handleSave() {
     if (!editTitle.trim()) {
@@ -139,124 +149,160 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       return;
     }
 
+    if (editMemberIds.length === 0) {
+      setError('担当者を1名以上選択してください');
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
     try {
-      const selectedMember = MEMBERS.find((m) => m.id === editMemberId);
+      const sharedUpdates = {
+        opportunityName: editTitle,
+        title: editTitle,
+        date: editDate,
+        startTime: editStartTime,
+        endTime: editEndTime,
+        address: editLocation,
+        scheduleMemo: editMemo,
+      };
+
+      const outlookErrors = [];
+      const token = (syncToOutlook && isAuthenticated) ? await getToken() : null;
 
       if (isManualAssignment) {
-        // Common updates (applied to this event — memberId stays per-entry for group)
-        const selfUpdates = {
-          opportunityName: editTitle,
-          title: editTitle,
-          date: editDate,
-          startTime: editStartTime,
-          endTime: editEndTime,
-          memberId: editMemberId,
-          memberEmail: selectedMember?.email || event.memberEmail,
-          address: editLocation,
-          scheduleMemo: editMemo,
-        };
-        dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: event.id, ...selfUpdates } });
+        // Diff: which members stay, get added, get removed
+        const currentMemberIds = new Set(groupAssignments.map((a) => a.memberId));
+        const newMemberIds = new Set(editMemberIds);
 
-        // Propagate to group siblings (keep their own memberId / memberEmail / outlookEventId)
-        if (applyToGroup && hasGroup) {
-          const sharedUpdates = {
-            opportunityName: editTitle,
-            title: editTitle,
-            date: editDate,
-            startTime: editStartTime,
-            endTime: editEndTime,
-            address: editLocation,
-            scheduleMemo: editMemo,
-          };
+        const stayingAssignments = groupAssignments.filter((a) => newMemberIds.has(a.memberId));
+        const removedAssignments = groupAssignments.filter((a) => !newMemberIds.has(a.memberId));
+        const addedMemberIds = editMemberIds.filter((id) => !currentMemberIds.has(id));
+
+        // Ensure groupId exists if we'll have multiple members
+        const totalCount = stayingAssignments.length + addedMemberIds.length;
+        const groupId = event.groupId
+          || (totalCount > 1
+            ? `group_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+            : null);
+
+        // 1) UPDATE staying members with shared fields (+ assign groupId if newly created)
+        for (const a of stayingAssignments) {
+          const updates = { ...sharedUpdates };
+          if (groupId && !a.groupId) updates.groupId = groupId;
+          dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, ...updates } });
+
+          // Outlook update
+          if (token) {
+            const m = MEMBERS.find((mm) => mm.id === a.memberId);
+            if (m && !m.skipOutlookSync) {
+              if (a.outlookEventId) {
+                const result = await updateCalendarEvent(token, m.email, a.outlookEventId, {
+                  subject: editTitle,
+                  start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
+                  end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
+                  location: { displayName: editLocation || '' },
+                  body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
+                });
+                if (!result.success) outlookErrors.push(`${m.nameJa}: ${result.error}`);
+              } else {
+                // No outlookEventId yet — create one
+                const result = await createCalendarEvent(token, m.email, {
+                  subject: editTitle,
+                  start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
+                  end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
+                  location: { displayName: editLocation || '' },
+                  body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
+                });
+                if (result.success && result.data?.id) {
+                  dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, outlookEventId: result.data.id } });
+                } else if (!result.success) {
+                  outlookErrors.push(`${m.nameJa}: ${result.error}`);
+                }
+              }
+            }
+          }
+        }
+
+        // 2) ADD newly selected members
+        for (const memberId of addedMemberIds) {
+          const m = MEMBERS.find((mm) => mm.id === memberId);
+          let outlookEventId = null;
+          if (token && m && !m.skipOutlookSync) {
+            const result = await createCalendarEvent(token, m.email, {
+              subject: editTitle,
+              start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
+              location: { displayName: editLocation || '' },
+              body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
+            });
+            if (result.success) outlookEventId = result.data?.id || null;
+            else outlookErrors.push(`${m?.nameJa || memberId}: ${result.error}`);
+          }
           dispatch({
-            type: 'UPDATE_ASSIGNMENTS_BULK',
-            payload: { ids: groupSiblings.map((s) => s.id), updates: sharedUpdates },
+            type: 'ADD_ASSIGNMENT',
+            payload: {
+              sourceType: event.sourceType || 'manual',
+              opportunityId: event.opportunityId || null,
+              opportunityName: editTitle,
+              accountName: event.accountName || null,
+              category: event.category || null,
+              status: event.status || null,
+              stage: event.stage || null,
+              memberId,
+              memberEmail: m?.email || null,
+              date: editDate,
+              startTime: editStartTime,
+              endTime: editEndTime,
+              isAllDay: event.isAllDay || false,
+              isDelivery: event.isDelivery || false,
+              syncOutlook: syncToOutlook,
+              address: editLocation,
+              scheduleMemo: editMemo,
+              outlookEventId,
+              groupId,
+            },
           });
+        }
+
+        // 3) DELETE removed members
+        for (const a of removedAssignments) {
+          if (token && a.outlookEventId) {
+            const m = MEMBERS.find((mm) => mm.id === a.memberId);
+            if (m && !m.skipOutlookSync) {
+              const result = await deleteCalendarEvent(token, m.email, a.outlookEventId);
+              if (!result.success) outlookErrors.push(`${m.nameJa}: ${result.error}`);
+            }
+          }
+          dispatch({ type: 'DELETE_ASSIGNMENT', payload: a.id });
+        }
+      } else if (isOutlook && token) {
+        // Pure Outlook event — update only this one
+        const result = await updateCalendarEvent(token, event.memberEmail, event.id, {
+          subject: editTitle,
+          start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
+          end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
+          location: { displayName: editLocation || '' },
+          body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
+        });
+        if (!result.success) {
+          outlookErrors.push(`${event.memberEmail}: ${result.error}`);
+        } else {
+          setEvents(
+            events.map((e) =>
+              e.id === event.id
+                ? { ...e, title: editTitle, start: `${editDate}T${editStartTime}:00`, end: `${editDate}T${editEndTime}:00`, location: editLocation }
+                : e
+            )
+          );
         }
       }
 
-      // Sync to Outlook if checkbox is checked and user is authenticated
-      if (syncToOutlook && isAuthenticated) {
-        const token = await getToken();
-
-        // Build list of (assignment, member) targets
-        const targets = [];
-        // Primary (this event)
-        {
-          const primaryOutlookId = isOutlook ? event.id : event.outlookEventId;
-          targets.push({
-            assignmentId: event.id,
-            memberEmail: selectedMember?.email || event.memberEmail || member?.email,
-            skipSync: selectedMember?.skipOutlookSync,
-            outlookEventId: primaryOutlookId,
-          });
-        }
-        if (applyToGroup && hasGroup && isManualAssignment) {
-          for (const sib of groupSiblings) {
-            const sibMember = MEMBERS.find((m) => m.id === sib.memberId);
-            targets.push({
-              assignmentId: sib.id,
-              memberEmail: sibMember?.email || sib.memberEmail,
-              skipSync: sibMember?.skipOutlookSync,
-              outlookEventId: sib.outlookEventId,
-            });
-          }
-        }
-
-        const outlookErrors = [];
-        for (const t of targets) {
-          if (!t.memberEmail || t.skipSync) continue;
-          if (t.outlookEventId) {
-            // Update existing Outlook event
-            const updates = {
-              subject: editTitle,
-              start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: editLocation || '' },
-              body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
-            };
-            const result = await updateCalendarEvent(token, t.memberEmail, t.outlookEventId, updates);
-            if (!result.success) {
-              outlookErrors.push(`${t.memberEmail}: ${result.error}`);
-            } else if (isOutlook && t.outlookEventId === event.id) {
-              // Refresh in-memory Outlook event cache
-              setEvents(
-                events.map((e) =>
-                  e.id === t.outlookEventId
-                    ? { ...e, title: editTitle, start: `${editDate}T${editStartTime}:00`, end: `${editDate}T${editEndTime}:00`, location: editLocation }
-                    : e
-                )
-              );
-            }
-          } else {
-            // Create new Outlook event and store ID back on the assignment
-            const eventData = {
-              subject: editTitle,
-              start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: editLocation || '' },
-              body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
-            };
-            const result = await createCalendarEvent(token, t.memberEmail, eventData);
-            if (!result.success) {
-              outlookErrors.push(`${t.memberEmail}: ${result.error}`);
-            } else if (result.data?.id && t.assignmentId) {
-              dispatch({
-                type: 'UPDATE_ASSIGNMENT',
-                payload: { id: t.assignmentId, outlookEventId: result.data.id },
-              });
-            }
-          }
-        }
-
-        if (outlookErrors.length > 0) {
-          setError(`Outlook同期エラー:\n${outlookErrors.join('\n')}`);
-          setSaving(false);
-          return;
-        }
+      if (outlookErrors.length > 0) {
+        setError(`Outlook同期エラー:\n${outlookErrors.join('\n')}`);
+        setSaving(false);
+        return;
       }
 
       setEditMode(false);
@@ -418,19 +464,40 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                   </div>
                 </div>
 
-                {/* Member */}
+                {/* Members (multi-select) */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">担当者</label>
-                  <select
-                    value={editMemberId}
-                    onChange={(e) => setEditMemberId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  >
-                    <option value="">選択してください</option>
-                    {MEMBERS.map((m) => (
-                      <option key={m.id} value={m.id}>{m.nameJa}</option>
-                    ))}
-                  </select>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    担当者 <span className="text-red-500">*</span>
+                    {editMemberIds.length > 0 && (
+                      <span className="ml-2 text-blue-600">({editMemberIds.length}名)</span>
+                    )}
+                    {isManualAssignment && (
+                      <span className="ml-2 text-gray-400 text-[10px]">チェック追加/解除で割当を一括変更</span>
+                    )}
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {MEMBERS.map((m) => {
+                      const isSelected = editMemberIds.includes(m.id);
+                      // For pure Outlook events, only allow selecting the original member
+                      const disabled = !isManualAssignment && m.id !== event.memberId;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => !disabled && toggleEditMember(m.id)}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm transition ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50 text-blue-800 ring-1 ring-blue-500'
+                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                          } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
+                          {m.nameJa}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Location */}
@@ -456,21 +523,6 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y"
                   />
                 </div>
-
-                {/* Group sync toggle */}
-                {hasGroup && (
-                  <label className="flex items-center gap-2 cursor-pointer bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={applyToGroup}
-                      onChange={(e) => setApplyToGroup(e.target.checked)}
-                      className="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500"
-                    />
-                    <span className="text-sm text-amber-800">
-                      同じ案件の他メンバー({groupSiblings.length}名)にも反映
-                    </span>
-                  </label>
-                )}
 
                 {/* Outlook sync checkbox */}
                 {isAuthenticated && (
