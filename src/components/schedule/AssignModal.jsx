@@ -141,6 +141,7 @@ export default function AssignModal({
         sourceType: opportunity.type || 'opportunity',
         opportunityId: opportunity.id,
         opportunityName: displayName,
+        workCategory: categoryLabel || null,
         accountName: isMaint ? null : opportunity.accountName,
         summary: isMaint ? opportunity.summary : null,
         category: opportunity.category || null,

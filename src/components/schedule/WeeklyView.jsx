@@ -10,6 +10,7 @@ import {
   timeStringToMinutes,
 } from '../../utils/dateUtils';
 import { STATUS_KEYWORDS } from '../../data/statusTypes';
+import { WORK_CATEGORIES, WORK_CATEGORY_IDS, getAssignmentCategoryId } from '../../data/workCategories';
 import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
 
@@ -81,6 +82,53 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
   const [visibleMembers, setVisibleMembers] = useState(
     () => new Set(MEMBER_ORDER)
   );
+
+  // Work category filter state (id set; null included = no/unknown category)
+  const [visibleCategories, setVisibleCategories] = useState(() => {
+    try {
+      const raw = localStorage.getItem('construction-schedule-visible-categories');
+      if (raw) return new Set(JSON.parse(raw));
+    } catch {
+      // ignore
+    }
+    return new Set([...WORK_CATEGORY_IDS, '__none__']);
+  });
+
+  function toggleCategory(id) {
+    setVisibleCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem(
+          'construction-schedule-visible-categories',
+          JSON.stringify([...next])
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
+  function toggleAllCategories() {
+    const all = [...WORK_CATEGORY_IDS, '__none__'];
+    const next = visibleCategories.size === all.length ? new Set() : new Set(all);
+    setVisibleCategories(next);
+    try {
+      localStorage.setItem(
+        'construction-schedule-visible-categories',
+        JSON.stringify([...next])
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  function isAssignmentVisibleByCategory(a) {
+    const cat = getAssignmentCategoryId(a) || '__none__';
+    return visibleCategories.has(cat);
+  }
 
   // Ordered members list
   const orderedMembers = useMemo(() => {
@@ -180,10 +228,14 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     (memberId, date) => {
       const dateStr = toISODate(date);
       return assignments.filter(
-        (a) => a.memberId === memberId && a.date === dateStr && !a.isDelivery
+        (a) =>
+          a.memberId === memberId &&
+          a.date === dateStr &&
+          !a.isDelivery &&
+          isAssignmentVisibleByCategory(a)
       );
     },
-    [assignments]
+    [assignments, visibleCategories]
   );
 
   // Detect member status for a given date from all-day events
@@ -204,10 +256,14 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     (memberId, date) => {
       const dateStr = toISODate(date);
       return assignments.filter(
-        (a) => a.memberId === memberId && a.date === dateStr && a.isDelivery
+        (a) =>
+          a.memberId === memberId &&
+          a.date === dateStr &&
+          a.isDelivery &&
+          isAssignmentVisibleByCategory(a)
       );
     },
-    [assignments]
+    [assignments, visibleCategories]
   );
 
   // Check if any all-day events exist in visible data
@@ -447,8 +503,50 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
         </button>
       </div>
 
+      {/* Work category filter chips */}
+      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+        <span className="text-[10px] text-gray-500 mr-1">作業種別:</span>
+        <button
+          onClick={toggleAllCategories}
+          className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 transition-colors"
+        >
+          {visibleCategories.size === WORK_CATEGORY_IDS.length + 1 ? '全解除' : '全選択'}
+        </button>
+        {WORK_CATEGORIES.map((cat) => {
+          const active = visibleCategories.has(cat.id);
+          return (
+            <button
+              key={cat.id}
+              onClick={() => toggleCategory(cat.id)}
+              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
+                active ? 'border-transparent text-white' : 'border-gray-300 text-gray-400 bg-white'
+              }`}
+              style={active ? { backgroundColor: cat.color } : {}}
+            >
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: active ? 'white' : cat.color }}
+              />
+              {cat.label}
+            </button>
+          );
+        })}
+        <button
+          onClick={() => toggleCategory('__none__')}
+          className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
+            visibleCategories.has('__none__')
+              ? 'border-gray-400 bg-gray-100 text-gray-700'
+              : 'border-gray-300 text-gray-400 bg-white'
+          }`}
+          title="種別未設定の予定"
+        >
+          未分類
+        </button>
+      </div>
+
       {/* Member filter chips */}
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+        <span className="text-[10px] text-gray-500 mr-1">メンバー:</span>
         <button
           onClick={toggleAllMembers}
           className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 transition-colors"
