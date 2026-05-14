@@ -671,16 +671,28 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                               onDrop={(e) => handleDeliveryDrop(e, date, member.id)}
                               onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(toISODate(date), '08:00', member.id, { isDelivery: true })}
                             >
-                              {deliveries.map((d) => (
-                                <div
-                                  key={d.id}
-                                  className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer bg-orange-100 border-l-2 border-orange-500 text-orange-700"
-                                  title={d.opportunityName}
-                                  onClick={(e) => { e.stopPropagation(); onEventClick(d); }}
-                                >
-                                  {d.opportunityName?.replace('【納品】', '')}
-                                </div>
-                              ))}
+                              {deliveries.map((d) => {
+                                const synced = !!d.outlookEventId;
+                                return (
+                                  <div
+                                    key={d.id}
+                                    className={`text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1 ${
+                                      synced
+                                        ? 'bg-orange-100 border-l-2 border-orange-500 text-orange-700'
+                                        : 'bg-orange-50 border-l-2 border-dashed border-orange-400 text-orange-600'
+                                    }`}
+                                    title={`${d.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
+                                    onClick={(e) => { e.stopPropagation(); onEventClick(d); }}
+                                  >
+                                    <span className={`text-[7px] leading-none px-0.5 rounded font-bold ${
+                                      synced ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900'
+                                    }`}>
+                                      {synced ? '✓' : '仮'}
+                                    </span>
+                                    <span className="truncate">{d.opportunityName?.replace('【納品】', '')}</span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })}
@@ -943,16 +955,28 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                               onDrop={(e) => handleDeliveryDrop(e, date, member.id)}
                               onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(toISODate(date), '08:00', member.id, { isDelivery: true })}
                             >
-                              {deliveries.map((d) => (
-                                <div
-                                  key={d.id}
-                                  className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer bg-orange-100 border-l-2 border-orange-500 text-orange-700"
-                                  title={d.opportunityName}
-                                  onClick={(e) => { e.stopPropagation(); onEventClick(d); }}
-                                >
-                                  {d.opportunityName?.replace('【納品】', '')}
-                                </div>
-                              ))}
+                              {deliveries.map((d) => {
+                                const synced = !!d.outlookEventId;
+                                return (
+                                  <div
+                                    key={d.id}
+                                    className={`text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1 ${
+                                      synced
+                                        ? 'bg-orange-100 border-l-2 border-orange-500 text-orange-700'
+                                        : 'bg-orange-50 border-l-2 border-dashed border-orange-400 text-orange-600'
+                                    }`}
+                                    title={`${d.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
+                                    onClick={(e) => { e.stopPropagation(); onEventClick(d); }}
+                                  >
+                                    <span className={`text-[7px] leading-none px-0.5 rounded font-bold ${
+                                      synced ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900'
+                                    }`}>
+                                      {synced ? '✓' : '仮'}
+                                    </span>
+                                    <span className="truncate">{d.opportunityName?.replace('【納品】', '')}</span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })}

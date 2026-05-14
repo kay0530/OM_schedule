@@ -37,6 +37,9 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
   const isAssignment = !!event.opportunityName;
   const isStatus = !!event.statusType;
   const isDraggable = isAssignment; // Only assignments are draggable
+  // For manual assignments, "synced to Outlook" = has an outlookEventId
+  const isSyncedToOutlook = isAssignment && !!event.outlookEventId;
+  const isDraftOnly = isAssignment && !event.outlookEventId;
 
   let bgColor, borderColor, textColor;
   if (isAssignment) {
@@ -144,8 +147,13 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
       style={{
         top: `${topOffset}px`,
         height: `${Math.max(height, 14)}px`,
+        // Draft (not yet synced to Outlook): hatched background for at-a-glance distinction
         backgroundColor: bgColor,
-        borderLeft: `3px solid ${borderColor}`,
+        backgroundImage: isDraftOnly
+          ? `repeating-linear-gradient(135deg, transparent, transparent 4px, ${borderColor}1a 4px, ${borderColor}1a 8px)`
+          : undefined,
+        // Solid border = synced, dashed = draft
+        borderLeft: `3px ${isDraftOnly ? 'dashed' : 'solid'} ${borderColor}`,
         zIndex: showTooltip || isResizing ? 20 : 10,
       }}
       draggable={isDraggable && !isResizing}
@@ -163,11 +171,25 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
       onMouseEnter={() => !isResizing && setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
+      {/* Sync status badge (assignments only) */}
+      {isAssignment && height >= 14 && (
+        <span
+          className={`absolute top-0.5 right-0.5 text-[8px] leading-none px-1 py-px rounded font-bold ${
+            isSyncedToOutlook
+              ? 'bg-emerald-600 text-white'
+              : 'bg-amber-400 text-amber-900'
+          }`}
+          title={isSyncedToOutlook ? 'Outlook送信済み' : '仮（未送信）'}
+        >
+          {isSyncedToOutlook ? '✓' : '仮'}
+        </span>
+      )}
+
       {/* Event title */}
       {height >= 14 && (
         <p
           className="text-[10px] font-medium leading-tight px-1 pt-0.5 truncate"
-          style={{ color: textColor }}
+          style={{ color: textColor, paddingRight: isAssignment ? '14px' : undefined }}
         >
           {title}
         </p>
@@ -199,8 +221,17 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
             {startTime} – {endTime}
           </p>
           {isAssignment && (
-            <span className="inline-block mt-1 text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+            <span className="inline-block mt-1 text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded mr-1">
               施工予定
+            </span>
+          )}
+          {isAssignment && (
+            <span
+              className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${
+                isSyncedToOutlook ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+              }`}
+            >
+              {isSyncedToOutlook ? '✓ Outlook送信済み' : '仮（未送信）'}
             </span>
           )}
           {isDraggable && (
