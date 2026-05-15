@@ -8,7 +8,7 @@ import { timeStringToMinutes } from '../../utils/dateUtils';
  *
  * @param {{ event: object, hourHeight: number, startHour: number, memberColor?: string, onClick?: (event) => void, onResizeEnd?: (event, newEndTime: string) => void }}
  */
-export default function EventBlock({ event, hourHeight, startHour, memberColor, onClick, onDoubleClick, onResizeEnd, isActive, colorOutlook = true }) {
+export default function EventBlock({ event, hourHeight, startHour, memberColor, onClick, onDoubleClick, onResizeEnd, isActive, colorOutlook = true, laneIndex = 0, laneCount = 1 }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [resizeDeltaPx, setResizeDeltaPx] = useState(0);
   const [isResizing, setIsResizing] = useState(false);
@@ -141,12 +141,16 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
     <div
       ref={blockRef}
       data-event-block="true"
-      className={`absolute left-0.5 right-0.5 rounded overflow-hidden cursor-pointer transition-shadow hover:shadow-md ${
+      className={`absolute rounded overflow-hidden cursor-pointer transition-shadow hover:shadow-md ${
         isResizing ? 'opacity-80 shadow-lg' : ''
       } ${isDraggable ? 'select-none' : ''} ${isActive ? 'ring-2 ring-blue-500 shadow-md' : ''}`}
+      title={`${title}${startTime && endTime ? ` (${startTime}–${endTime})` : ''}${event.location ? `\n📍 ${event.location}` : ''}${isAssignment ? (isSyncedToOutlook ? '\n✓ Outlook送信済み' : '\n仮（未送信）') : ''}`}
       style={{
         top: `${topOffset}px`,
         height: `${Math.max(height, 14)}px`,
+        // Lane-based horizontal layout when events overlap
+        left: laneCount > 1 ? `calc(${(laneIndex / laneCount) * 100}% + 1px)` : '2px',
+        width: laneCount > 1 ? `calc(${100 / laneCount}% - 2px)` : 'calc(100% - 4px)',
         // Draft (not yet synced to Outlook): hatched background for at-a-glance distinction
         backgroundColor: bgColor,
         backgroundImage: isDraftOnly

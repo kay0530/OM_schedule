@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +38,35 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
   const [editMemo, setEditMemo] = useState('');
   const [syncToOutlook, setSyncToOutlook] = useState(false);
 
+  // Modal drag state
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragStartRef = useRef(null);
+
+  function handleHeaderMouseDown(e) {
+    if (e.button !== 0) return;
+    // Don't initiate drag if clicking interactive elements
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    e.preventDefault();
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: dragOffset.x,
+      origY: dragOffset.y,
+    };
+    function onMove(ev) {
+      const s = dragStartRef.current;
+      if (!s) return;
+      setDragOffset({ x: s.origX + (ev.clientX - s.startX), y: s.origY + (ev.clientY - s.startY) });
+    }
+    function onUp() {
+      dragStartRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
   // Reset state when event changes or modal opens
   useEffect(() => {
     if (event && isOpen) {
@@ -62,6 +91,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setEditLocation(event.address || event.location || '');
       setEditMemo(event.scheduleMemo || '');
       setSyncToOutlook(false);
+      setDragOffset({ x: 0, y: 0 });
     }
   }, [event, isOpen, assignments]);
 
@@ -357,27 +387,36 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop (lighter & not blocking — modal is draggable so user may want to see the calendar) */}
       <div
-        className="fixed inset-0 bg-black/50 z-50"
+        className="fixed inset-0 bg-black/20 z-40"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden max-h-[80vh] flex flex-col"
+          className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden max-h-[80vh] flex flex-col pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
+          style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
         >
-          {/* Header with colored top bar */}
+          {/* Drag handle bar (colored top — drag here to move) */}
           <div
-            className="h-2 shrink-0"
+            className="h-2 shrink-0 cursor-move"
             style={{ backgroundColor: member?.color || '#6B7280' }}
+            onMouseDown={handleHeaderMouseDown}
+            title="ドラッグで移動"
           />
 
-          <div className="px-6 py-4 overflow-y-auto" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
-            {/* Title & close */}
-            <div className="flex items-start justify-between mb-4">
+          <div
+            className="px-6 py-4 overflow-y-auto"
+            style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}
+          >
+            {/* Title & close (also draggable) */}
+            <div
+              className="flex items-start justify-between mb-4 cursor-move select-none"
+              onMouseDown={handleHeaderMouseDown}
+            >
               <h2 className="text-lg font-bold text-gray-800 leading-tight pr-4">
                 {editMode ? '予定を編集' : (
                   event.opportunityId ? (

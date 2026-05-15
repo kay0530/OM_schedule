@@ -8,6 +8,7 @@ import {
   timeStringToMinutes,
 } from '../../utils/dateUtils';
 import { STATUS_KEYWORDS } from '../../data/statusTypes';
+import { layoutEvents } from '../../utils/eventLayout';
 import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
 
@@ -73,14 +74,22 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
     else setVisibleMembers(new Set(MEMBER_ORDER));
   }
 
+  // IDs of Outlook events already represented by an assignment (dedupe)
+  const linkedOutlookIds = useMemo(() => {
+    const s = new Set();
+    for (const a of assignments) if (a.outlookEventId) s.add(a.outlookEventId);
+    return s;
+  }, [assignments]);
+
   const getEventsForMember = useCallback(
     (memberEmail) => {
       return events.filter((e) => {
         if (e.isAllDay) return false;
+        if (linkedOutlookIds.has(e.id)) return false;
         return e.start.substring(0, 10) === dateStr && e.memberEmail === memberEmail.toLowerCase();
       });
     },
-    [events, dateStr]
+    [events, dateStr, linkedOutlookIds]
   );
 
   const getAllDayEventsForMember = useCallback(
@@ -494,34 +503,21 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                     {/* Status overlay */}
                     {statusType && <StatusOverlay statusType={statusType} totalHeight={gridHeight} />}
 
-                    {/* Calendar events */}
-                    {memberEvents.map((event) => (
+                    {/* Combined events with lane-based layout for overlaps */}
+                    {layoutEvents([...memberEvents, ...memberAssignments]).map(({ event: ev, laneIndex, laneCount }) => (
                       <EventBlock
-                        key={event.id}
-                        event={event}
+                        key={ev.id}
+                        event={ev}
                         hourHeight={HOUR_HEIGHT}
                         startHour={START_HOUR}
                         memberColor={member.color}
                         colorOutlook={settings.colorOutlookEvents ?? true}
                         onClick={onEventClick}
                         onDoubleClick={onEventDoubleClick}
-                        isActive={activeEventId === event.id}
-                      />
-                    ))}
-
-                    {/* Assignment events */}
-                    {memberAssignments.map((assignment) => (
-                      <EventBlock
-                        key={assignment.id}
-                        event={assignment}
-                        hourHeight={HOUR_HEIGHT}
-                        startHour={START_HOUR}
-                        memberColor={member.color}
-                        colorOutlook={settings.colorOutlookEvents ?? true}
-                        onClick={onEventClick}
-                        onDoubleClick={onEventDoubleClick}
-                        isActive={activeEventId === assignment.id}
-                        onResizeEnd={handleResizeEnd}
+                        isActive={activeEventId === ev.id}
+                        onResizeEnd={ev.opportunityName ? handleResizeEnd : undefined}
+                        laneIndex={laneIndex}
+                        laneCount={laneCount}
                       />
                     ))}
                   </div>

@@ -11,6 +11,7 @@ import {
 } from '../../utils/dateUtils';
 import { STATUS_KEYWORDS } from '../../data/statusTypes';
 import { WORK_CATEGORIES, WORK_CATEGORY_IDS, getAssignmentCategoryId } from '../../data/workCategories';
+import { layoutEvents } from '../../utils/eventLayout';
 import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
 
@@ -196,17 +197,29 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     return `${start}〜${end}`;
   }, [displayDates]);
 
+  // Set of Outlook event IDs already represented by an assignment — used to
+  // dedupe so an event doesn't render twice (once as Outlook event, once as
+  // assignment) when the app pushed it to Outlook.
+  const linkedOutlookIds = useMemo(() => {
+    const s = new Set();
+    for (const a of assignments) {
+      if (a.outlookEventId) s.add(a.outlookEventId);
+    }
+    return s;
+  }, [assignments]);
+
   // Get timed events for a member + date (from CalendarContext)
   const getEventsForMemberDate = useCallback(
     (memberEmail, date) => {
       const dateStr = toISODate(date);
       return events.filter((e) => {
         if (e.isAllDay) return false;
+        if (linkedOutlookIds.has(e.id)) return false; // already shown as assignment
         const eventDate = e.start.substring(0, 10);
         return eventDate === dateStr && e.memberEmail === memberEmail.toLowerCase();
       });
     },
-    [events]
+    [events, linkedOutlookIds]
   );
 
   // Get all-day events for a member + date
@@ -837,34 +850,21 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 <StatusOverlay statusType={statusType} totalHeight={gridHeight} />
                               )}
 
-                              {/* Calendar events */}
-                              {memberEvents.map((event) => (
+                              {/* Combined events laid out into lanes so overlaps render side-by-side */}
+                              {layoutEvents([...memberEvents, ...memberAssignments]).map(({ event: ev, laneIndex, laneCount }) => (
                                 <EventBlock
-                                  key={event.id}
-                                  event={event}
+                                  key={ev.id}
+                                  event={ev}
                                   hourHeight={HOUR_HEIGHT}
                                   startHour={START_HOUR}
                                   memberColor={member.color}
                                   colorOutlook={settings.colorOutlookEvents ?? true}
                                   onClick={onEventClick}
                                   onDoubleClick={onEventDoubleClick}
-                                  isActive={activeEventId === event.id}
-                                />
-                              ))}
-
-                              {/* Assignment events */}
-                              {memberAssignments.map((assignment) => (
-                                <EventBlock
-                                  key={assignment.id}
-                                  event={assignment}
-                                  hourHeight={HOUR_HEIGHT}
-                                  startHour={START_HOUR}
-                                  memberColor={member.color}
-                                  colorOutlook={settings.colorOutlookEvents ?? true}
-                                  onClick={onEventClick}
-                                  onDoubleClick={onEventDoubleClick}
-                                  isActive={activeEventId === assignment.id}
-                                  onResizeEnd={handleResizeEnd}
+                                  isActive={activeEventId === ev.id}
+                                  onResizeEnd={ev.opportunityName ? handleResizeEnd : undefined}
+                                  laneIndex={laneIndex}
+                                  laneCount={laneCount}
                                 />
                               ))}
                             </div>
@@ -1118,34 +1118,21 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                               <StatusOverlay statusType={statusType} totalHeight={gridHeight} />
                             )}
 
-                            {/* Calendar events */}
-                            {memberEvents.map((event) => (
+                            {/* Combined events laid out into lanes */}
+                            {layoutEvents([...memberEvents, ...memberAssignments]).map(({ event: ev, laneIndex, laneCount }) => (
                               <EventBlock
-                                key={event.id}
-                                event={event}
+                                key={ev.id}
+                                event={ev}
                                 hourHeight={HOUR_HEIGHT}
                                 startHour={START_HOUR}
                                 memberColor={member.color}
                                 colorOutlook={settings.colorOutlookEvents ?? true}
                                 onClick={onEventClick}
                                 onDoubleClick={onEventDoubleClick}
-                                isActive={activeEventId === event.id}
-                              />
-                            ))}
-
-                            {/* Assignment events */}
-                            {memberAssignments.map((assignment) => (
-                              <EventBlock
-                                key={assignment.id}
-                                event={assignment}
-                                hourHeight={HOUR_HEIGHT}
-                                startHour={START_HOUR}
-                                memberColor={member.color}
-                                colorOutlook={settings.colorOutlookEvents ?? true}
-                                onClick={onEventClick}
-                                onDoubleClick={onEventDoubleClick}
-                                isActive={activeEventId === assignment.id}
-                                onResizeEnd={handleResizeEnd}
+                                isActive={activeEventId === ev.id}
+                                onResizeEnd={ev.opportunityName ? handleResizeEnd : undefined}
+                                laneIndex={laneIndex}
+                                laneCount={laneCount}
                               />
                             ))}
                           </div>

@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { CalendarProvider } from './context/CalendarContext';
+import { CalendarProvider, useCalendar } from './context/CalendarContext';
 import { AppProvider, useApp } from './context/AppContext';
 import MainLayout from './components/layout/MainLayout';
 import MonthlyView from './components/schedule/MonthlyView';
@@ -27,7 +27,39 @@ function AuthenticatedApp() {
 }
 
 function AppInner() {
-  const { dispatch } = useApp();
+  const { assignments, dispatch } = useApp();
+  const { events } = useCalendar();
+
+  // Reconcile assignments with edits made on the Outlook side: when an
+  // Outlook event matching an assignment's outlookEventId differs from the
+  // assignment's stored values, pull the latest values from Outlook into the
+  // assignment. Avoids the "duplicate event" problem after editing on Outlook.
+  useEffect(() => {
+    if (!events || events.length === 0 || assignments.length === 0) return;
+    const eventById = new Map(events.map((e) => [e.id, e]));
+    for (const a of assignments) {
+      if (!a.outlookEventId) continue;
+      const oe = eventById.get(a.outlookEventId);
+      if (!oe) continue;
+      const newTitle = oe.title || '';
+      const newDate = oe.start?.substring(0, 10) || a.date;
+      const newStart = oe.start?.substring(11, 16) || a.startTime;
+      const newEnd = oe.end?.substring(11, 16) || a.endTime;
+      const newLocation = oe.location || '';
+      const updates = {};
+      if (newTitle && newTitle !== a.opportunityName) {
+        updates.opportunityName = newTitle;
+        updates.title = newTitle;
+      }
+      if (newDate && newDate !== a.date) updates.date = newDate;
+      if (newStart && newStart !== a.startTime) updates.startTime = newStart;
+      if (newEnd && newEnd !== a.endTime) updates.endTime = newEnd;
+      if (newLocation !== (a.address || '')) updates.address = newLocation;
+      if (Object.keys(updates).length > 0) {
+        dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, ...updates } });
+      }
+    }
+  }, [events, assignments, dispatch]);
 
   const [activeView, setActiveView] = useState('weekly');
   const [viewParams, setViewParams] = useState({});
