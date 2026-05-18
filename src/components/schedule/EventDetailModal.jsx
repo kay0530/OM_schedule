@@ -67,7 +67,13 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     document.addEventListener('mouseup', onUp);
   }
 
-  // Reset state when event changes or modal opens
+  // Reset state when modal opens with a new event. Intentionally NOT depending
+  // on `assignments` here — otherwise any background update (e.g. Outlook
+  // reconcile) would re-enter this effect and snap the user out of edit mode.
+  // We keep `assignments` reachable via a ref for the initial group lookup.
+  const assignmentsRef = useRef(assignments);
+  assignmentsRef.current = assignments;
+
   useEffect(() => {
     if (event && isOpen) {
       setEditMode(false);
@@ -85,7 +91,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setEditEndTime(endTime);
       // Pre-select all group members (or just self for non-group events)
       const groupMemberIds = event.groupId
-        ? assignments.filter((a) => a.groupId === event.groupId).map((a) => a.memberId)
+        ? assignmentsRef.current.filter((a) => a.groupId === event.groupId).map((a) => a.memberId)
         : (event.memberId ? [event.memberId] : []);
       setEditMemberIds([...new Set(groupMemberIds)]);
       setEditLocation(event.address || event.location || '');
@@ -93,7 +99,8 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setSyncToOutlook(false);
       setDragOffset({ x: 0, y: 0 });
     }
-  }, [event, isOpen, assignments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event?.id, isOpen]);
 
   if (!isOpen || !event) return null;
 
