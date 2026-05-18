@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CalendarProvider, useCalendar } from './context/CalendarContext';
 import { AppProvider, useApp } from './context/AppContext';
@@ -37,10 +37,17 @@ function AppInner() {
   // Outlook event matching an assignment's outlookEventId differs from the
   // assignment's stored values, pull the latest values from Outlook into the
   // assignment. Avoids the "duplicate event" problem after editing on Outlook.
+  // Depend only on `events` (and read latest assignments via ref) so this
+  // does not re-fire on every assignment dispatch — which previously caused
+  // Firestore write storms ("resource-exhausted").
+  const assignmentsRef = useRef(assignments);
+  assignmentsRef.current = assignments;
   useEffect(() => {
-    if (!events || events.length === 0 || assignments.length === 0) return;
+    if (!events || events.length === 0) return;
+    const current = assignmentsRef.current;
+    if (current.length === 0) return;
     const eventById = new Map(events.map((e) => [e.id, e]));
-    for (const a of assignments) {
+    for (const a of current) {
       if (!a.outlookEventId) continue;
       const oe = eventById.get(a.outlookEventId);
       if (!oe) continue;
@@ -62,7 +69,7 @@ function AppInner() {
         dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, ...updates } });
       }
     }
-  }, [events, assignments, dispatch]);
+  }, [events, dispatch]);
 
   const [activeView, setActiveView] = useState('weekly');
   const [viewParams, setViewParams] = useState({});

@@ -1,6 +1,26 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import { createContext, useContext, useReducer, useEffect, useRef, useCallback, useMemo } from 'react';
 import { isFirestoreEnabled, saveAssignments, loadAssignments, subscribeAssignments } from '../services/firestoreService';
+
+// Debounce Firestore writes — batches rapid edits (e.g. multi-member assign,
+// Outlook reconcile sweep) into a single write to avoid hitting the
+// "Write stream exhausted maximum allowed queued writes" error.
+const FIRESTORE_WRITE_DEBOUNCE_MS = 800;
+
+function makeDebouncedSaver() {
+  let timer = null;
+  let latestPayload = null;
+  return (payload) => {
+    latestPayload = payload;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      const p = latestPayload;
+      timer = null;
+      latestPayload = null;
+      saveAssignments(p);
+    }, FIRESTORE_WRITE_DEBOUNCE_MS);
+  };
+}
 
 const AppContext = createContext(null);
 
@@ -142,6 +162,9 @@ export function AppProvider({ children }) {
   // assignments by stale Firestore snapshots / late callbacks.
   const tombstonesRef = useRef(loadTombstones());
 
+  // Debounced Firestore writer — stable across renders
+  const debouncedSaveRef = useRef(makeDebouncedSaver());
+
   function rememberDeletion(id) {
     if (!id) return;
     tombstonesRef.current.set(id, Date.now());
@@ -163,13 +186,14 @@ export function AppProvider({ children }) {
     return list.filter((a) => !tombstonesRef.current.has(a.id));
   }
 
-  // Wrap dispatch to record tombstones on delete
-  const wrappedDispatch = (action) => {
+  // Wrap dispatch to record tombstones on delete. useCallback for stable
+  // identity so downstream useEffects don't re-fire each render.
+  const wrappedDispatch = useCallback((action) => {
     if (action.type === 'DELETE_ASSIGNMENT') {
       rememberDeletion(action.payload);
     }
     dispatch(action);
-  };
+  }, []);
 
   // Load from Firestore on mount and subscribe to real-time updates
   useEffect(() => {
@@ -194,7 +218,7 @@ export function AppProvider({ children }) {
       // or if we filtered out tombstoned items still present on the server
       const fsHadTombstoned = (firestoreAssignments || []).length !== fsArray.length;
       if (localOnly.length > 0 || fsHadTombstoned) {
-        saveAssignments(merged);
+        debouncedSaveRef.current(merged);
       }
 
       initialLoadDoneRef.current = true;
@@ -215,7 +239,7 @@ export function AppProvider({ children }) {
 
       // If the server still has tombstoned items, push the cleaned list back
       if (firestoreAssignments.length !== fsArray.length) {
-        saveAssignments(merged);
+        debouncedSaveRef.current(merged);
       }
     });
 
@@ -237,7 +261,7 @@ export function AppProvider({ children }) {
       fromFirestoreRef.current = false;
       return; // Don't save back to Firestore
     }
-    saveAssignments(state.assignments);
+    debouncedSaveRef.current(state.assignments);
   }, [state.assignments]);
 
   // Persist settings to localStorage
@@ -252,11 +276,14 @@ export function AppProvider({ children }) {
     }
   }, [state.settings]);
 
-  const value = {
-    assignments: state.assignments,
-    settings: state.settings,
-    dispatch: wrappedDispatch,
-  };
+  const value = useMemo(
+    () => ({
+      assignments: state.assignments,
+      settings: state.settings,
+      dispatch: wrappedDispatch,
+    }),
+    [state.assignments, state.settings, wrappedDispatch]
+  );
 
   return (
     <AppContext.Provider value={value}>
