@@ -28,22 +28,28 @@ const STORAGE_KEYS = {
   assignments: 'construction-schedule-assignments',
   settings: 'construction-schedule-settings',
   tombstones: 'construction-schedule-deleted-ids',
+  pendingAdds: 'construction-schedule-pending-adds',
 };
 
 // How long deleted IDs are remembered to block resurrection from a stale
 // Firestore snapshot (in ms). 5 minutes is generous and survives a few
 // page reloads while Firestore propagates.
 const TOMBSTONE_TTL_MS = 5 * 60 * 1000;
+// How long locally added IDs are protected from being wiped by a Firestore
+// snapshot that hasn't ack'd the add yet. After this they're treated as
+// "should have synced by now"; if FS still doesn't have them, they were
+// most likely deleted by a peer.
+const PENDING_ADD_TTL_MS = 60 * 1000;
 
-function loadTombstones() {
+function loadIdMap(storageKey, ttlMs) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.tombstones);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return new Map();
     const obj = JSON.parse(raw);
     const m = new Map();
     const now = Date.now();
     for (const [id, ts] of Object.entries(obj)) {
-      if (now - ts < TOMBSTONE_TTL_MS) m.set(id, ts);
+      if (now - ts < ttlMs) m.set(id, ts);
     }
     return m;
   } catch {
@@ -51,14 +57,19 @@ function loadTombstones() {
   }
 }
 
-function persistTombstones(map) {
+function persistIdMap(storageKey, map) {
   try {
     const obj = Object.fromEntries(map);
-    localStorage.setItem(STORAGE_KEYS.tombstones, JSON.stringify(obj));
+    localStorage.setItem(storageKey, JSON.stringify(obj));
   } catch {
     // ignore
   }
 }
+
+function loadTombstones() { return loadIdMap(STORAGE_KEYS.tombstones, TOMBSTONE_TTL_MS); }
+function persistTombstones(map) { persistIdMap(STORAGE_KEYS.tombstones, map); }
+function loadPendingAdds() { return loadIdMap(STORAGE_KEYS.pendingAdds, PENDING_ADD_TTL_MS); }
+function persistPendingAdds(map) { persistIdMap(STORAGE_KEYS.pendingAdds, map); }
 
 const DEFAULT_SETTINGS = {
   workingHours: { start: '08:00', end: '18:00' },
@@ -162,6 +173,11 @@ export function AppProvider({ children }) {
   // assignments by stale Firestore snapshots / late callbacks.
   const tombstonesRef = useRef(loadTombstones());
 
+  // PendingAdds map: id -> timestamp. Items this client added that Firestore
+  // may not have acknowledged yet. Used to decide which local-only items to
+  // preserve when a Firestore snapshot arrives.
+  const pendingAddsRef = useRef(loadPendingAdds());
+
   // Debounced Firestore writer — stable across renders
   const debouncedSaveRef = useRef(makeDebouncedSaver());
 
@@ -169,6 +185,39 @@ export function AppProvider({ children }) {
     if (!id) return;
     tombstonesRef.current.set(id, Date.now());
     persistTombstones(tombstonesRef.current);
+    // If the deleted item was pending an add, drop the pending too
+    if (pendingAddsRef.current.delete(id)) {
+      persistPendingAdds(pendingAddsRef.current);
+    }
+  }
+
+  function rememberPendingAdd(id) {
+    if (!id) return;
+    pendingAddsRef.current.set(id, Date.now());
+    persistPendingAdds(pendingAddsRef.current);
+  }
+
+  function gcPendingAdds() {
+    const now = Date.now();
+    let mutated = false;
+    for (const [id, ts] of pendingAddsRef.current) {
+      if (now - ts >= PENDING_ADD_TTL_MS) {
+        pendingAddsRef.current.delete(id);
+        mutated = true;
+      }
+    }
+    if (mutated) persistPendingAdds(pendingAddsRef.current);
+  }
+
+  function ackPendingAdds(fsIds) {
+    let mutated = false;
+    for (const id of pendingAddsRef.current.keys()) {
+      if (fsIds.has(id)) {
+        pendingAddsRef.current.delete(id);
+        mutated = true;
+      }
+    }
+    if (mutated) persistPendingAdds(pendingAddsRef.current);
   }
 
   function filterTombstoned(list) {
@@ -186,11 +235,23 @@ export function AppProvider({ children }) {
     return list.filter((a) => !tombstonesRef.current.has(a.id));
   }
 
-  // Wrap dispatch to record tombstones on delete. useCallback for stable
-  // identity so downstream useEffects don't re-fire each render.
+  // Wrap dispatch to record tombstones on delete and pending on add.
+  // useCallback for stable identity so downstream useEffects don't re-fire
+  // each render.
   const wrappedDispatch = useCallback((action) => {
     if (action.type === 'DELETE_ASSIGNMENT') {
       rememberDeletion(action.payload);
+    } else if (action.type === 'ADD_ASSIGNMENT') {
+      // Compute the id the reducer will assign (mirrors reducer logic)
+      const id = action.payload?.id || null;
+      // If no id provided, generate one here so we can track it pre-dispatch
+      if (!id) {
+        const generated = `assign_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        action = { ...action, payload: { ...action.payload, id: generated } };
+        rememberPendingAdd(generated);
+      } else {
+        rememberPendingAdd(id);
+      }
     }
     dispatch(action);
   }, []);
@@ -199,45 +260,52 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!isFirestoreEnabled()) return;
 
-    // Initial load from Firestore — merge with local data to preserve
-    // any assignments that failed to sync (e.g. Firestore save errors)
+    // Initial load: take Firestore as source of truth, only preserve
+    // *recently added* local items that may not have synced yet
     loadAssignments().then((firestoreAssignments) => {
+      gcPendingAdds();
       const localAssignments = stateRef.current.assignments;
       const fsArray = filterTombstoned(firestoreAssignments || []);
       const fsIds = new Set(fsArray.map((a) => a.id));
-      const localOnly = localAssignments.filter((a) => a.id && !fsIds.has(a.id));
-      const merged = localOnly.length > 0 ? [...fsArray, ...localOnly] : fsArray;
+      ackPendingAdds(fsIds);
+      // Only preserve local items that are in the pendingAdds set
+      const localPending = localAssignments.filter(
+        (a) => a.id && !fsIds.has(a.id) && pendingAddsRef.current.has(a.id)
+      );
+      const merged = localPending.length > 0 ? [...fsArray, ...localPending] : fsArray;
 
-      // Only dispatch if merged differs from local to avoid wiping data
-      if (firestoreAssignments !== null || localOnly.length === 0) {
+      if (firestoreAssignments !== null || localPending.length === 0) {
         fromFirestoreRef.current = true;
         dispatch({ type: 'SET_ASSIGNMENTS', payload: merged });
       }
 
-      // Re-push merged state to Firestore if we recovered local-only items,
-      // or if we filtered out tombstoned items still present on the server
+      // Push back to Firestore if we recovered pending-adds OR filtered
+      // tombstoned items from the server snapshot
       const fsHadTombstoned = (firestoreAssignments || []).length !== fsArray.length;
-      if (localOnly.length > 0 || fsHadTombstoned) {
+      if (localPending.length > 0 || fsHadTombstoned) {
         debouncedSaveRef.current(merged);
       }
 
       initialLoadDoneRef.current = true;
     });
 
-    // Subscribe to real-time updates — merge to avoid losing local changes
+    // Subscribe to real-time updates — trust Firestore as truth, only
+    // preserve recently added local items pending FS acknowledgement
     const unsubscribe = subscribeAssignments((firestoreAssignments) => {
-      if (!initialLoadDoneRef.current) return; // Let initial load handle first
+      if (!initialLoadDoneRef.current) return;
+      gcPendingAdds();
       const localAssignments = stateRef.current.assignments;
       const fsArray = filterTombstoned(firestoreAssignments);
       const fsIds = new Set(fsArray.map((a) => a.id));
-      const localOnly = localAssignments.filter((a) => a.id && !fsIds.has(a.id));
-      const merged = localOnly.length > 0
-        ? [...fsArray, ...localOnly]
-        : fsArray;
+      ackPendingAdds(fsIds);
+      const localPending = localAssignments.filter(
+        (a) => a.id && !fsIds.has(a.id) && pendingAddsRef.current.has(a.id)
+      );
+      const merged = localPending.length > 0 ? [...fsArray, ...localPending] : fsArray;
+
       fromFirestoreRef.current = true;
       dispatch({ type: 'SET_ASSIGNMENTS', payload: merged });
 
-      // If the server still has tombstoned items, push the cleaned list back
       if (firestoreAssignments.length !== fsArray.length) {
         debouncedSaveRef.current(merged);
       }
