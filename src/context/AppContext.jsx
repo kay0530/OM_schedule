@@ -7,7 +7,38 @@ const AppContext = createContext(null);
 const STORAGE_KEYS = {
   assignments: 'construction-schedule-assignments',
   settings: 'construction-schedule-settings',
+  tombstones: 'construction-schedule-deleted-ids',
 };
+
+// How long deleted IDs are remembered to block resurrection from a stale
+// Firestore snapshot (in ms). 5 minutes is generous and survives a few
+// page reloads while Firestore propagates.
+const TOMBSTONE_TTL_MS = 5 * 60 * 1000;
+
+function loadTombstones() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.tombstones);
+    if (!raw) return new Map();
+    const obj = JSON.parse(raw);
+    const m = new Map();
+    const now = Date.now();
+    for (const [id, ts] of Object.entries(obj)) {
+      if (now - ts < TOMBSTONE_TTL_MS) m.set(id, ts);
+    }
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+
+function persistTombstones(map) {
+  try {
+    const obj = Object.fromEntries(map);
+    localStorage.setItem(STORAGE_KEYS.tombstones, JSON.stringify(obj));
+  } catch {
+    // ignore
+  }
+}
 
 const DEFAULT_SETTINGS = {
   workingHours: { start: '08:00', end: '18:00' },
@@ -107,6 +138,39 @@ export function AppProvider({ children }) {
   stateRef.current = state;
   const initialLoadDoneRef = useRef(false);
 
+  // Tombstone map: id -> timestamp. Used to block resurrection of deleted
+  // assignments by stale Firestore snapshots / late callbacks.
+  const tombstonesRef = useRef(loadTombstones());
+
+  function rememberDeletion(id) {
+    if (!id) return;
+    tombstonesRef.current.set(id, Date.now());
+    persistTombstones(tombstonesRef.current);
+  }
+
+  function filterTombstoned(list) {
+    const now = Date.now();
+    // GC expired tombstones
+    let mutated = false;
+    for (const [id, ts] of tombstonesRef.current) {
+      if (now - ts >= TOMBSTONE_TTL_MS) {
+        tombstonesRef.current.delete(id);
+        mutated = true;
+      }
+    }
+    if (mutated) persistTombstones(tombstonesRef.current);
+    if (tombstonesRef.current.size === 0) return list;
+    return list.filter((a) => !tombstonesRef.current.has(a.id));
+  }
+
+  // Wrap dispatch to record tombstones on delete
+  const wrappedDispatch = (action) => {
+    if (action.type === 'DELETE_ASSIGNMENT') {
+      rememberDeletion(action.payload);
+    }
+    dispatch(action);
+  };
+
   // Load from Firestore on mount and subscribe to real-time updates
   useEffect(() => {
     if (!isFirestoreEnabled()) return;
@@ -115,7 +179,7 @@ export function AppProvider({ children }) {
     // any assignments that failed to sync (e.g. Firestore save errors)
     loadAssignments().then((firestoreAssignments) => {
       const localAssignments = stateRef.current.assignments;
-      const fsArray = firestoreAssignments || [];
+      const fsArray = filterTombstoned(firestoreAssignments || []);
       const fsIds = new Set(fsArray.map((a) => a.id));
       const localOnly = localAssignments.filter((a) => a.id && !fsIds.has(a.id));
       const merged = localOnly.length > 0 ? [...fsArray, ...localOnly] : fsArray;
@@ -126,8 +190,10 @@ export function AppProvider({ children }) {
         dispatch({ type: 'SET_ASSIGNMENTS', payload: merged });
       }
 
-      // Re-push merged state to Firestore if we recovered local-only items
-      if (localOnly.length > 0) {
+      // Re-push merged state to Firestore if we recovered local-only items,
+      // or if we filtered out tombstoned items still present on the server
+      const fsHadTombstoned = (firestoreAssignments || []).length !== fsArray.length;
+      if (localOnly.length > 0 || fsHadTombstoned) {
         saveAssignments(merged);
       }
 
@@ -138,13 +204,19 @@ export function AppProvider({ children }) {
     const unsubscribe = subscribeAssignments((firestoreAssignments) => {
       if (!initialLoadDoneRef.current) return; // Let initial load handle first
       const localAssignments = stateRef.current.assignments;
-      const fsIds = new Set(firestoreAssignments.map((a) => a.id));
+      const fsArray = filterTombstoned(firestoreAssignments);
+      const fsIds = new Set(fsArray.map((a) => a.id));
       const localOnly = localAssignments.filter((a) => a.id && !fsIds.has(a.id));
       const merged = localOnly.length > 0
-        ? [...firestoreAssignments, ...localOnly]
-        : firestoreAssignments;
+        ? [...fsArray, ...localOnly]
+        : fsArray;
       fromFirestoreRef.current = true;
       dispatch({ type: 'SET_ASSIGNMENTS', payload: merged });
+
+      // If the server still has tombstoned items, push the cleaned list back
+      if (firestoreAssignments.length !== fsArray.length) {
+        saveAssignments(merged);
+      }
     });
 
     return unsubscribe;
@@ -183,7 +255,7 @@ export function AppProvider({ children }) {
   const value = {
     assignments: state.assignments,
     settings: state.settings,
-    dispatch,
+    dispatch: wrappedDispatch,
   };
 
   return (
