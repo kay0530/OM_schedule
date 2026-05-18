@@ -203,10 +203,15 @@ async function graphDelete(url, accessToken) {
       Authorization: `Bearer ${accessToken}`,
     },
   });
+  // 404 = the event is already gone on Outlook side. Treat as success so we
+  // don't pollute the console when re-deleting an event that was already
+  // removed from Outlook directly or by another peer.
+  if (res.status === 404) return { alreadyGone: true };
   if (!res.ok) {
     const errorBody = await res.text();
     throw new Error(`Graph API error ${res.status}: ${errorBody}`);
   }
+  return { alreadyGone: false };
 }
 
 /**
@@ -238,9 +243,10 @@ export async function updateCalendarEvent(accessToken, memberEmail, eventId, upd
 export async function deleteCalendarEvent(accessToken, memberEmail, eventId) {
   try {
     const url = `${GRAPH_BASE_URL}/users/${memberEmail}/events/${eventId}`;
-    await graphDelete(url, accessToken);
-    return { success: true, error: null };
+    const r = await graphDelete(url, accessToken);
+    return { success: true, error: null, alreadyGone: !!r?.alreadyGone };
   } catch (err) {
+    // 404 is handled inside graphDelete; everything else is a real failure.
     console.error(`Failed to delete event ${eventId} for ${memberEmail}:`, err);
     return { success: false, error: err.message };
   }
