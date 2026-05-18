@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CalendarProvider, useCalendar } from './context/CalendarContext';
 import { AppProvider, useApp } from './context/AppContext';
+import { MEMBERS } from './data/members';
+import { deleteCalendarEvent } from './services/graphCalendarService';
 import MainLayout from './components/layout/MainLayout';
 import MonthlyView from './components/schedule/MonthlyView';
 import WeeklyView from './components/schedule/WeeklyView';
@@ -29,6 +31,7 @@ function AuthenticatedApp() {
 function AppInner() {
   const { assignments, dispatch } = useApp();
   const { events } = useCalendar();
+  const { isAuthenticated, getToken } = useAuth();
 
   // Reconcile assignments with edits made on the Outlook side: when an
   // Outlook event matching an assignment's outlookEventId differs from the
@@ -186,9 +189,30 @@ function AppInner() {
       else if (activeEvent) setActiveEvent(null);
     }
     if (e.key === 'Delete' && activeEvent && activeEvent.opportunityName) {
-      // Delete selected assignment
-      if (confirm(`「${activeEvent.opportunityName}」を削除しますか？`)) {
-        dispatch({ type: 'DELETE_ASSIGNMENT', payload: activeEvent.id });
+      // Delete selected assignment (group-aware + Outlook-aware)
+      const targets = activeEvent.groupId
+        ? assignments.filter((a) => a.groupId === activeEvent.groupId)
+        : [activeEvent];
+      const label = targets.length > 1
+        ? `「${activeEvent.opportunityName}」を${targets.length}名分まとめて削除しますか？\n（Outlook送信済みの予定はOutlookからも削除されます）`
+        : `「${activeEvent.opportunityName}」を削除しますか？`;
+      if (confirm(label)) {
+        // Best-effort Outlook delete in the background; local delete is immediate
+        (async () => {
+          const token = isAuthenticated ? await getToken().catch(() => null) : null;
+          for (const t of targets) {
+            if (token && t.outlookEventId) {
+              const m = MEMBERS.find((mm) => mm.id === t.memberId);
+              const memberEmail = m?.email || t.memberEmail;
+              if (memberEmail && !m?.skipOutlookSync) {
+                try { await deleteCalendarEvent(token, memberEmail, t.outlookEventId); } catch { /* ignore */ }
+              }
+            }
+          }
+        })();
+        for (const t of targets) {
+          dispatch({ type: 'DELETE_ASSIGNMENT', payload: t.id });
+        }
         setActiveEvent(null);
       }
     }

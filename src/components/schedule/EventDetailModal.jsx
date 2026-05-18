@@ -354,27 +354,52 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     setError(null);
 
     try {
+      const outlookErrors = [];
+      const token = isAuthenticated ? await getToken() : null;
+
       if (isManualAssignment) {
-        dispatch({ type: 'DELETE_ASSIGNMENT', payload: event.id });
+        // Group-aware delete: nuke every assignment that shares this groupId
+        // (or just this event when no group)
+        const toDelete = event.groupId
+          ? assignments.filter((a) => a.groupId === event.groupId)
+          : [event];
+
+        for (const a of toDelete) {
+          // Outlook side: use the assignment's own outlookEventId + its own member email
+          if (token && a.outlookEventId) {
+            const m = MEMBERS.find((mm) => mm.id === a.memberId);
+            const memberEmail = m?.email || a.memberEmail;
+            if (memberEmail && !m?.skipOutlookSync) {
+              const result = await deleteCalendarEvent(token, memberEmail, a.outlookEventId);
+              if (!result.success) {
+                // 404 = already deleted on Outlook side; treat as success
+                if (!/404/.test(result.error || '')) {
+                  outlookErrors.push(`${m?.nameJa || memberEmail}: ${result.error}`);
+                }
+              } else {
+                setEvents(events.filter((e) => e.id !== a.outlookEventId));
+              }
+            }
+          }
+          dispatch({ type: 'DELETE_ASSIGNMENT', payload: a.id });
+        }
+      } else if (isOutlook && token) {
+        // Pure Outlook event (not an assignment) — delete just it
+        const memberEmail = event.memberEmail || member?.email;
+        if (memberEmail) {
+          const result = await deleteCalendarEvent(token, memberEmail, event.id);
+          if (!result.success && !/404/.test(result.error || '')) {
+            outlookErrors.push(`${event.memberEmail}: ${result.error}`);
+          } else {
+            setEvents(events.filter((e) => e.id !== event.id));
+          }
+        }
       }
 
-      // Delete from Outlook if it's an Outlook event
-      if ((isOutlook || event.outlookEventId) && isAuthenticated) {
-        const token = await getToken();
-        const memberEmail = event.memberEmail || member?.email;
-        const eventId = event.id || event.outlookEventId;
-
-        if (memberEmail && eventId) {
-          const result = await deleteCalendarEvent(token, memberEmail, eventId);
-          if (!result.success) {
-            setError(`Outlook削除エラー: ${result.error}`);
-            setSaving(false);
-            return;
-          }
-
-          // Remove from CalendarContext
-          setEvents(events.filter((e) => e.id !== eventId));
-        }
+      if (outlookErrors.length > 0) {
+        setError(`Outlook削除エラー:\n${outlookErrors.join('\n')}`);
+        setSaving(false);
+        return;
       }
 
       onClose();
@@ -384,6 +409,11 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setSaving(false);
     }
   }
+
+  // Show group count next to delete button so user knows it's a bulk delete
+  const groupDeleteCount = event?.groupId
+    ? assignments.filter((a) => a.groupId === event.groupId).length
+    : 0;
 
   return (
     <>
@@ -695,7 +725,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         : 'text-red-600 hover:bg-red-50'
                     } disabled:opacity-50`}
                   >
-                    {deleteConfirm ? '本当に削除' : '削除'}
+                    {deleteConfirm
+                      ? (groupDeleteCount > 1 ? `本当に${groupDeleteCount}名分削除` : '本当に削除')
+                      : (groupDeleteCount > 1 ? `削除 (${groupDeleteCount}名)` : '削除')}
                   </button>
                 )}
                 {editMode && (
@@ -708,7 +740,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         : 'text-red-600 hover:bg-red-50'
                     } disabled:opacity-50`}
                   >
-                    {deleteConfirm ? '本当に削除' : '削除'}
+                    {deleteConfirm
+                      ? (groupDeleteCount > 1 ? `本当に${groupDeleteCount}名分削除` : '本当に削除')
+                      : (groupDeleteCount > 1 ? `削除 (${groupDeleteCount}名)` : '削除')}
                   </button>
                 )}
               </div>
