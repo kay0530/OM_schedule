@@ -40,6 +40,7 @@ export default function AssignModal({
   const [isAllDay, setIsAllDay] = useState(false);
   const [workCategory, setWorkCategory] = useState('');
   const [customCategory, setCustomCategory] = useState('');
+  const [memo, setMemo] = useState('');
 
   // Reset form when opportunity changes or modal opens
   useEffect(() => {
@@ -56,6 +57,9 @@ export default function AssignModal({
       setIsAllDay(false);
       setWorkCategory('');
       setCustomCategory('');
+      // Pre-fill memo from SF source (maintenance content or opportunity memo)
+      const isMaint = opportunity.type === 'maintenance';
+      setMemo(isMaint ? (opportunity.content || '') : (opportunity.scheduleMemo || ''));
     }
   }, [isOpen, opportunity, preselectedMember, preselectedDate, preselectedStartTime, preselectedEndTime]);
 
@@ -112,7 +116,7 @@ export default function AssignModal({
             if (!token) {
               outlookResults.push({ member: member.nameJa, success: false, error: 'トークン取得失敗' });
             } else {
-              const bodyContent = buildEventBody(opportunity.scheduleMemo || opportunity.content || '');
+              const bodyContent = buildEventBody(memo || opportunity.scheduleMemo || opportunity.content || '');
               const eventData = isAllDay ? {
                 subject: displayName,
                 isAllDay: true,
@@ -155,7 +159,7 @@ export default function AssignModal({
         syncOutlook,
         stage: isMaint ? null : opportunity.stage,
         address: opportunity.address,
-        scheduleMemo: isMaint ? opportunity.content : opportunity.scheduleMemo,
+        scheduleMemo: memo || (isMaint ? opportunity.content : opportunity.scheduleMemo),
         outlookEventId,
         groupId,
       };
@@ -356,6 +360,20 @@ export default function AssignModal({
                 </select>
               </div>
             </div>}
+
+            {/* Memo */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                メモ
+              </label>
+              <textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                rows={3}
+                placeholder="メモ（任意）"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y"
+              />
+            </div>
 
             {/* Outlook sync checkbox */}
             <div className="flex items-center gap-3">
