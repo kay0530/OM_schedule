@@ -10,7 +10,7 @@ const FIRESTORE_WRITE_DEBOUNCE_MS = 800;
 function makeDebouncedSaver() {
   let timer = null;
   let latestPayload = null;
-  return (payload) => {
+  const fn = (payload) => {
     latestPayload = payload;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
@@ -20,6 +20,12 @@ function makeDebouncedSaver() {
       saveAssignments(p);
     }, FIRESTORE_WRITE_DEBOUNCE_MS);
   };
+  fn.cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    latestPayload = null;
+  };
+  return fn;
 }
 
 const AppContext = createContext(null);
@@ -323,6 +329,16 @@ export function AppProvider({ children }) {
       );
     } catch {
       // Ignore quota errors
+    }
+
+    // CRITICAL: do not write to Firestore until our initial load from
+    // Firestore has completed. Otherwise a brand-new client (empty
+    // localStorage) would queue saveAssignments([]) on mount, then 800ms
+    // later overwrite all other clients' data with an empty array.
+    if (isFirestoreEnabled() && !initialLoadDoneRef.current) {
+      // Drop any payload that was queued before we knew about the server
+      debouncedSaveRef.current.cancel();
+      return;
     }
 
     if (fromFirestoreRef.current) {
