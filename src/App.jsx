@@ -92,6 +92,9 @@ function AppInner() {
   // Active (selected) event for copy-paste
   const [activeEvent, setActiveEvent] = useState(null);
   const [copiedEvent, setCopiedEvent] = useState(null);
+  // True only after Ctrl+V: the user has explicitly armed paste-on-click.
+  // Without this, a stray click on the calendar would paste unintentionally.
+  const [pasteArmed, setPasteArmed] = useState(false);
 
   function navigate(view, params = {}) {
     setActiveView(view);
@@ -120,8 +123,8 @@ function AppInner() {
       setPickedJob(null);
       return;
     }
-    // Paste copied event to this slot
-    if (copiedEvent) {
+    // Paste copied event to this slot — only if user explicitly pressed Ctrl+V
+    if (copiedEvent && pasteArmed) {
       const startMinutes = parseInt(time.substring(0, 2)) * 60 + parseInt(time.substring(3, 5));
       const origStart = (parseInt(copiedEvent.startTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.startTime?.substring(3, 5) || '0');
       const origEnd = (parseInt(copiedEvent.endTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.endTime?.substring(3, 5) || '0');
@@ -140,6 +143,7 @@ function AppInner() {
           endTime: newEndTime,
         },
       });
+      setPasteArmed(false); // single-shot paste
       return;
     }
     // Deselect active event when clicking empty slot
@@ -188,10 +192,17 @@ function AppInner() {
     setSelectedEvent(null);
   }
 
-  // Keyboard shortcuts: Escape, Ctrl+C, Delete
+  // Keyboard shortcuts: Escape, Ctrl+C, Ctrl+V, Delete
   function handleKeyDown(e) {
+    // Don't hijack typing inside form fields
+    const tag = (e.target?.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) {
+      return;
+    }
+
     if (e.key === 'Escape') {
       if (pickedJob) setPickedJob(null);
+      else if (pasteArmed) setPasteArmed(false);
       else if (copiedEvent) setCopiedEvent(null);
       else if (activeEvent) setActiveEvent(null);
     }
@@ -242,6 +253,12 @@ function AppInner() {
         isAllDay: activeEvent.isAllDay || false,
       };
       setCopiedEvent(copyData);
+      setPasteArmed(false); // arming requires explicit Ctrl+V
+    }
+    // Ctrl+V: arm paste-on-click. Requires something to have been copied first.
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedEvent) {
+      e.preventDefault();
+      setPasteArmed(true);
     }
   }
 
@@ -279,13 +296,23 @@ function AppInner() {
           📌 「{pickedJob.name}」を選択中 — カレンダーのスロットをクリックして配置 （クリックでキャンセル / Escキー）
         </div>
       )}
-      {/* Copied event banner */}
-      {copiedEvent && !pickedJob && (
+      {/* Copied event banner — two states */}
+      {copiedEvent && !pickedJob && !pasteArmed && (
+        <div
+          className="fixed top-0 left-0 right-0 z-50 bg-gray-700 text-white text-center py-2 text-sm font-medium shadow-lg cursor-pointer"
+          onClick={() => setCopiedEvent(null)}
+          title="クリックでクリップボードをクリア"
+        >
+          📋 「{copiedEvent.opportunityName}」をコピー済み — <span className="bg-white/20 px-2 py-0.5 rounded mx-1">Ctrl + V</span> で貼り付けモードに （クリック/Escでクリア）
+        </div>
+      )}
+      {copiedEvent && !pickedJob && pasteArmed && (
         <div
           className="fixed top-0 left-0 right-0 z-50 bg-blue-500 text-white text-center py-2 text-sm font-medium shadow-lg cursor-pointer"
-          onClick={() => setCopiedEvent(null)}
+          onClick={() => setPasteArmed(false)}
+          title="クリックで貼り付けモード解除"
         >
-          📋 「{copiedEvent.opportunityName}」をコピー済み — スロットをクリックして貼り付け （クリック/Escでキャンセル）
+          📋 貼り付けモード — 「{copiedEvent.opportunityName}」をカレンダーのスロットをクリックして配置 （クリック/Escでキャンセル）
         </div>
       )}
       <div onKeyDown={handleKeyDown} tabIndex={-1} className={pickedJob || copiedEvent ? 'pt-10' : ''}>
