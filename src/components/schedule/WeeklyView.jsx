@@ -236,7 +236,24 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     [events]
   );
 
+  // Get all-day ASSIGNMENTS for a member + date (rendered in the 終日 row)
+  const getAllDayAssignmentsForMemberDate = useCallback(
+    (memberId, date) => {
+      const dateStr = toISODate(date);
+      return assignments.filter(
+        (a) =>
+          a.memberId === memberId &&
+          a.date === dateStr &&
+          a.isAllDay &&
+          !a.isDelivery &&
+          isAssignmentVisibleByCategory(a)
+      );
+    },
+    [assignments, visibleCategories]
+  );
+
   // Get assignments for a member + date (from AppContext), excluding deliveries
+  // AND excluding all-day items (those are shown in the 終日 row)
   const getAssignmentsForMemberDate = useCallback(
     (memberId, date) => {
       const dateStr = toISODate(date);
@@ -245,6 +262,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
           a.memberId === memberId &&
           a.date === dateStr &&
           !a.isDelivery &&
+          !a.isAllDay &&
           isAssignmentVisibleByCategory(a)
       );
     },
@@ -279,10 +297,10 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     [assignments, visibleCategories]
   );
 
-  // Check if any all-day events exist in visible data
+  // Check if any all-day events (Outlook OR assignment) exist in visible data
   const hasAnyAllDayEvents = useMemo(() => {
-    return events.some((e) => e.isAllDay);
-  }, [events]);
+    return events.some((e) => e.isAllDay) || assignments.some((a) => a.isAllDay && !a.isDelivery);
+  }, [events, assignments]);
 
   // Current time indicator position
   const [currentTimePos, setCurrentTimePos] = useState(null);
@@ -730,6 +748,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                         >
                           {visibleOrderedMembers.map((member) => {
                             const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
+                            const allDayAsg = getAllDayAssignmentsForMemberDate(member.id, date);
                             return (
                               <div
                                 key={`allday-${member.id}-${toISODate(date)}`}
@@ -750,6 +769,30 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                     {evt.title}
                                   </div>
                                 ))}
+                                {allDayAsg.map((a) => {
+                                  const synced = !!a.outlookEventId;
+                                  return (
+                                    <div
+                                      key={a.id}
+                                      className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1"
+                                      style={{
+                                        backgroundColor: `${member.color}33`,
+                                        borderLeft: `2px ${synced ? 'solid' : 'dashed'} ${member.color}`,
+                                        color: member.color,
+                                      }}
+                                      title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
+                                      onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
+                                      onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
+                                    >
+                                      <span className={`text-[7px] leading-none px-0.5 rounded font-bold ${
+                                        synced ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900'
+                                      }`}>
+                                        {synced ? '✓' : '仮'}
+                                      </span>
+                                      <span className="truncate">{a.opportunityName}</span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             );
                           })}
@@ -1001,6 +1044,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                         >
                           {displayDates.map((date) => {
                             const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
+                            const allDayAsg = getAllDayAssignmentsForMemberDate(member.id, date);
                             return (
                               <div
                                 key={`allday-${member.id}-${toISODate(date)}`}
@@ -1021,6 +1065,30 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                     {evt.title}
                                   </div>
                                 ))}
+                                {allDayAsg.map((a) => {
+                                  const synced = !!a.outlookEventId;
+                                  return (
+                                    <div
+                                      key={a.id}
+                                      className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1"
+                                      style={{
+                                        backgroundColor: `${member.color}33`,
+                                        borderLeft: `2px ${synced ? 'solid' : 'dashed'} ${member.color}`,
+                                        color: member.color,
+                                      }}
+                                      title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
+                                      onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
+                                      onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
+                                    >
+                                      <span className={`text-[7px] leading-none px-0.5 rounded font-bold ${
+                                        synced ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900'
+                                      }`}>
+                                        {synced ? '✓' : '仮'}
+                                      </span>
+                                      <span className="truncate">{a.opportunityName}</span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             );
                           })}

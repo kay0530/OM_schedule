@@ -106,7 +106,18 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
 
   const getAssignmentsForMember = useCallback(
     (memberId) => {
-      return assignments.filter((a) => a.memberId === memberId && a.date === dateStr && !a.isDelivery);
+      return assignments.filter(
+        (a) => a.memberId === memberId && a.date === dateStr && !a.isDelivery && !a.isAllDay
+      );
+    },
+    [assignments, dateStr]
+  );
+
+  const getAllDayAssignmentsForMember = useCallback(
+    (memberId) => {
+      return assignments.filter(
+        (a) => a.memberId === memberId && a.date === dateStr && a.isAllDay && !a.isDelivery
+      );
     },
     [assignments, dateStr]
   );
@@ -130,7 +141,10 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
     [getAllDayEventsForMember]
   );
 
-  const hasAnyAllDayEvents = useMemo(() => events.some((e) => e.isAllDay), [events]);
+  const hasAnyAllDayEvents = useMemo(
+    () => events.some((e) => e.isAllDay) || assignments.some((a) => a.isAllDay && !a.isDelivery && a.date === dateStr),
+    [events, assignments, dateStr]
+  );
 
   // Current time indicator
   const [currentTimePos, setCurrentTimePos] = useState(null);
@@ -400,6 +414,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                   </div>
                   {visibleOrderedMembers.map((member, mIdx) => {
                     const allDayEvts = getAllDayEventsForMember(member.email);
+                    const allDayAsg = getAllDayAssignmentsForMember(member.id);
                     return (
                       <div
                         key={`allday-${member.id}`}
@@ -422,6 +437,30 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                             {evt.title}
                           </div>
                         ))}
+                        {allDayAsg.map((a) => {
+                          const synced = !!a.outlookEventId;
+                          return (
+                            <div
+                              key={a.id}
+                              className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1"
+                              style={{
+                                backgroundColor: `${member.color}33`,
+                                borderLeft: `2px ${synced ? 'solid' : 'dashed'} ${member.color}`,
+                                color: member.color,
+                              }}
+                              title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
+                              onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
+                              onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
+                            >
+                              <span className={`text-[7px] leading-none px-0.5 rounded font-bold ${
+                                synced ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900'
+                              }`}>
+                                {synced ? '✓' : '仮'}
+                              </span>
+                              <span className="truncate">{a.opportunityName}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
