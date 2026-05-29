@@ -415,6 +415,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                   {visibleOrderedMembers.map((member, mIdx) => {
                     const allDayEvts = getAllDayEventsForMember(member.email);
                     const allDayAsg = getAllDayAssignmentsForMember(member.id);
+                    const useOutlookColor = settings.colorOutlookEvents ?? true;
                     return (
                       <div
                         key={`allday-${member.id}`}
@@ -426,11 +427,14 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                         {allDayEvts.map((evt) => (
                           <div
                             key={evt.id}
-                            className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5"
-                            style={{
-                              backgroundColor: `${member.color}20`,
-                              borderLeft: `2px solid ${member.color}`,
-                              color: member.color,
+                            className="text-[10px] font-medium leading-tight truncate rounded px-1 py-1 mb-0.5"
+                            style={useOutlookColor ? {
+                              backgroundColor: member.color,
+                              color: 'white',
+                            } : {
+                              backgroundColor: '#E5E7EB',
+                              color: '#374151',
+                              borderLeft: '3px solid #9CA3AF',
                             }}
                             title={evt.title}
                           >
@@ -442,18 +446,20 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                           return (
                             <div
                               key={a.id}
-                              className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1"
+                              className="text-[10px] font-medium leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer flex items-center gap-1"
                               style={{
-                                backgroundColor: `${member.color}33`,
-                                borderLeft: `2px ${synced ? 'solid' : 'dashed'} ${member.color}`,
-                                color: member.color,
+                                backgroundColor: member.color,
+                                color: 'white',
+                                borderLeft: synced ? undefined : `3px dashed ${member.color}`,
+                                backgroundImage: synced ? undefined
+                                  : `repeating-linear-gradient(135deg, ${member.color}, ${member.color} 4px, ${member.color}cc 4px, ${member.color}cc 8px)`,
                               }}
                               title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
                               onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
                               onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
                             >
-                              <span className={`text-[7px] leading-none px-0.5 rounded font-bold ${
-                                synced ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900'
+                              <span className={`text-[8px] leading-none px-1 py-px rounded font-bold ${
+                                synced ? 'bg-white/30 text-white' : 'bg-amber-300 text-amber-900'
                               }`}>
                                 {synced ? '✓' : '仮'}
                               </span>
