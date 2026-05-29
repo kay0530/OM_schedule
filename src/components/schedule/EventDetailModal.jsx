@@ -37,7 +37,18 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
   const [editMemberIds, setEditMemberIds] = useState([]);
   const [editLocation, setEditLocation] = useState('');
   const [editMemo, setEditMemo] = useState('');
+  const [editWorkCategory, setEditWorkCategory] = useState('');
+  const [editCustomCategory, setEditCustomCategory] = useState('');
   const [syncToOutlook, setSyncToOutlook] = useState(false);
+
+  const PRESET_CATEGORIES = ['現地調査', 'パワまる工事', '年次点検', '洗浄', '草刈り', '事前準備'];
+
+  // Pull a 【...】prefix off a title string and return both pieces.
+  function splitCategory(rawTitle) {
+    if (!rawTitle) return { category: '', base: '' };
+    const m = rawTitle.match(/^【([^】]+)】(.*)$/);
+    return m ? { category: m[1], base: m[2] } : { category: '', base: rawTitle };
+  }
 
   // Modal drag state
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -86,7 +97,19 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       const endTime = event.endTime || event.end?.substring(11, 16) || '09:00';
       const eventDate = event.date || event.start?.substring(0, 10) || '';
 
-      setEditTitle(event.opportunityName || event.title || '');
+      const rawTitle = event.opportunityName || event.title || '';
+      const { category: parsedCat, base: parsedBase } = splitCategory(rawTitle);
+      const initialCat = event.workCategory || parsedCat || '';
+      // Title shown in the textbox = base name without the prefix; we re-add
+      // the prefix from the selected category on save so the two stay in sync.
+      setEditTitle(parsedBase || rawTitle);
+      if (initialCat && !PRESET_CATEGORIES.includes(initialCat)) {
+        setEditWorkCategory('その他（手入力）');
+        setEditCustomCategory(initialCat);
+      } else {
+        setEditWorkCategory(initialCat);
+        setEditCustomCategory('');
+      }
       setEditDate(eventDate);
       setEditStartTime(startTime);
       setEditEndTime(endTime);
@@ -156,6 +179,17 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     setEditStartTime(st);
     setEditEndTime(et);
     setEditIsAllDay(!!event.isAllDay);
+    const rawTitle = event.opportunityName || event.title || '';
+    const { category: parsedCat, base: parsedBase } = splitCategory(rawTitle);
+    const initialCat = event.workCategory || parsedCat || '';
+    setEditTitle(parsedBase || rawTitle);
+    if (initialCat && !PRESET_CATEGORIES.includes(initialCat)) {
+      setEditWorkCategory('その他（手入力）');
+      setEditCustomCategory(initialCat);
+    } else {
+      setEditWorkCategory(initialCat);
+      setEditCustomCategory('');
+    }
     const groupMemberIds = event.groupId
       ? assignments.filter((a) => a.groupId === event.groupId).map((a) => a.memberId)
       : (event.memberId ? [event.memberId] : []);
@@ -202,9 +236,17 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       const effStart = editIsAllDay ? '00:00' : editStartTime;
       const effEnd = editIsAllDay ? '24:00' : editEndTime;
 
+      // Compose final title: 【作業種別】base
+      const catLabel = editWorkCategory === 'その他（手入力）'
+        ? editCustomCategory.trim()
+        : editWorkCategory;
+      const baseTitle = editTitle.replace(/^【[^】]+】/, '').trim();
+      const finalTitle = catLabel ? `【${catLabel}】${baseTitle}` : baseTitle;
+
       const sharedUpdates = {
-        opportunityName: editTitle,
-        title: editTitle,
+        opportunityName: finalTitle,
+        title: finalTitle,
+        workCategory: catLabel || null,
         date: editDate,
         startTime: effStart,
         endTime: effEnd,
@@ -216,7 +258,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       // Outlook event body builder — all-day events use a different shape
       const buildOutlookBody = () => editIsAllDay
         ? {
-            subject: editTitle,
+            subject: finalTitle,
             isAllDay: true,
             start: { dateTime: `${editDate}T00:00:00`, timeZone: 'Asia/Tokyo' },
             end: { dateTime: `${editDate}T00:00:00`, timeZone: 'Asia/Tokyo' },
@@ -224,7 +266,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
           }
         : {
-            subject: editTitle,
+            subject: finalTitle,
             start: { dateTime: `${editDate}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
             end: { dateTime: `${editDate}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
             location: { displayName: editLocation || '' },
@@ -290,7 +332,8 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             payload: {
               sourceType: event.sourceType || 'manual',
               opportunityId: event.opportunityId || null,
-              opportunityName: editTitle,
+              opportunityName: finalTitle,
+              workCategory: catLabel || null,
               accountName: event.accountName || null,
               category: event.category || null,
               status: event.status || null,
@@ -331,7 +374,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           setEvents(
             events.map((e) =>
               e.id === event.id
-                ? { ...e, title: editTitle, start: `${editDate}T${effStart}:00`, end: `${editDate}T${effEnd}:00`, location: editLocation, isAllDay: editIsAllDay }
+                ? { ...e, title: finalTitle, start: `${editDate}T${effStart}:00`, end: `${editDate}T${effEnd}:00`, location: editLocation, isAllDay: editIsAllDay }
                 : e
             )
           );
@@ -491,9 +534,16 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             {editMode ? (
               /* ===== EDIT MODE ===== */
               <div className="space-y-4">
-                {/* Title */}
+                {/* Title (without category prefix) */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">タイトル</label>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    タイトル
+                    {editWorkCategory && (
+                      <span className="ml-2 text-gray-400 text-[10px]">
+                        保存時: 「【{editWorkCategory === 'その他（手入力）' ? editCustomCategory : editWorkCategory}】{editTitle.replace(/^【[^】]+】/, '')}」
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="text"
                     value={editTitle}
@@ -501,6 +551,36 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     placeholder="予定のタイトル"
                   />
+                </div>
+
+                {/* Work category */}
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">作業種別</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...PRESET_CATEGORIES, 'その他（手入力）'].map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setEditWorkCategory(editWorkCategory === cat ? '' : cat)}
+                        className={`px-2.5 py-1 rounded-lg border text-xs transition ${
+                          editWorkCategory === cat
+                            ? 'border-orange-500 bg-orange-50 text-orange-800 ring-1 ring-orange-500'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  {editWorkCategory === 'その他（手入力）' && (
+                    <input
+                      type="text"
+                      value={editCustomCategory}
+                      onChange={(e) => setEditCustomCategory(e.target.value)}
+                      placeholder="作業種別を入力..."
+                      className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                  )}
                 </div>
 
                 {/* Date */}
