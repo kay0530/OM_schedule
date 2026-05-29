@@ -14,6 +14,7 @@ import { WORK_CATEGORIES, WORK_CATEGORY_IDS, getAssignmentCategoryId } from '../
 import { layoutEvents } from '../../utils/eventLayout';
 import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
+import AllDayOverlay from './AllDayOverlay';
 
 // Time grid constants
 const HOUR_HEIGHT = 60; // pixels per hour
@@ -268,6 +269,25 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       );
     },
     [assignments, visibleCategories]
+  );
+
+  // Build combined all-day items (Outlook + assignment) for the full-day
+  // column overlay highlight
+  const getAllDayOverlayItems = useCallback(
+    (member, date) => {
+      const evts = getAllDayEventsForMemberDate(member.email, date).map((e) => ({
+        id: `o-${e.id}`,
+        color: member.color,
+        draft: false,
+      }));
+      const asg = getAllDayAssignmentsForMemberDate(member.id, date).map((a) => ({
+        id: `a-${a.id}`,
+        color: member.color,
+        draft: !a.outlookEventId,
+      }));
+      return [...evts, ...asg];
+    },
+    [getAllDayEventsForMemberDate, getAllDayAssignmentsForMemberDate]
   );
 
   // Detect member status for a given date from all-day events
@@ -904,6 +924,9 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 <StatusOverlay statusType={statusType} totalHeight={gridHeight} />
                               )}
 
+                              {/* All-day full-column highlight */}
+                              <AllDayOverlay items={getAllDayOverlayItems(member, date)} totalHeight={gridHeight} />
+
                               {/* Combined events laid out into lanes so overlaps render side-by-side */}
                               {layoutEvents([...memberEvents, ...memberAssignments]).map(({ event: ev, laneIndex, laneCount }) => (
                                 <EventBlock
@@ -1196,6 +1219,9 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             {statusType && (
                               <StatusOverlay statusType={statusType} totalHeight={gridHeight} />
                             )}
+
+                            {/* All-day full-column highlight */}
+                            <AllDayOverlay items={getAllDayOverlayItems(member, date)} totalHeight={gridHeight} />
 
                             {/* Combined events laid out into lanes */}
                             {layoutEvents([...memberEvents, ...memberAssignments]).map(({ event: ev, laneIndex, laneCount }) => (

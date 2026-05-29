@@ -11,6 +11,7 @@ import { STATUS_KEYWORDS } from '../../data/statusTypes';
 import { layoutEvents } from '../../utils/eventLayout';
 import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
+import AllDayOverlay from './AllDayOverlay';
 
 const HOUR_HEIGHT = 60;
 const START_HOUR = 0;
@@ -550,6 +551,15 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
 
                     {/* Status overlay */}
                     {statusType && <StatusOverlay statusType={statusType} totalHeight={gridHeight} />}
+
+                    {/* All-day full-column highlight */}
+                    <AllDayOverlay
+                      items={[
+                        ...getAllDayEventsForMember(member.email).map((e) => ({ id: `o-${e.id}`, color: member.color, draft: false })),
+                        ...getAllDayAssignmentsForMember(member.id).map((a) => ({ id: `a-${a.id}`, color: member.color, draft: !a.outlookEventId })),
+                      ]}
+                      totalHeight={gridHeight}
+                    />
 
                     {/* Combined events with lane-based layout for overlaps */}
                     {layoutEvents([...memberEvents, ...memberAssignments]).map(({ event: ev, laneIndex, laneCount }) => (
