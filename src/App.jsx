@@ -125,12 +125,22 @@ function AppInner() {
     }
     // Paste copied event to this slot — only if user explicitly pressed Ctrl+V
     if (copiedEvent && pasteArmed) {
-      const startMinutes = parseInt(time.substring(0, 2)) * 60 + parseInt(time.substring(3, 5));
-      const origStart = (parseInt(copiedEvent.startTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.startTime?.substring(3, 5) || '0');
-      const origEnd = (parseInt(copiedEvent.endTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.endTime?.substring(3, 5) || '0');
-      const duration = origEnd - origStart;
-      const newEndMinutes = Math.min(startMinutes + duration, 24 * 60);
-      const newEndTime = `${String(Math.floor(newEndMinutes / 60)).padStart(2, '0')}:${String(newEndMinutes % 60).padStart(2, '0')}`;
+      const isAllDayCopy = !!copiedEvent.isAllDay;
+      let newStartTime;
+      let newEndTime;
+      if (isAllDayCopy) {
+        // All-day: preserve 終日 nature regardless of clicked time
+        newStartTime = '00:00';
+        newEndTime = '24:00';
+      } else {
+        const startMinutes = parseInt(time.substring(0, 2)) * 60 + parseInt(time.substring(3, 5));
+        const origStart = (parseInt(copiedEvent.startTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.startTime?.substring(3, 5) || '0');
+        const origEnd = (parseInt(copiedEvent.endTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.endTime?.substring(3, 5) || '0');
+        const duration = origEnd - origStart;
+        const newEndMinutes = Math.min(startMinutes + duration, 24 * 60);
+        newStartTime = time;
+        newEndTime = `${String(Math.floor(newEndMinutes / 60)).padStart(2, '0')}:${String(newEndMinutes % 60).padStart(2, '0')}`;
+      }
 
       dispatch({
         type: 'ADD_ASSIGNMENT',
@@ -139,8 +149,12 @@ function AppInner() {
           id: undefined,
           memberId,
           date,
-          startTime: time,
+          startTime: newStartTime,
           endTime: newEndTime,
+          isAllDay: isAllDayCopy,
+          // Reset Outlook linkage — paste creates a brand new draft
+          outlookEventId: null,
+          groupId: null,
         },
       });
       setPasteArmed(false); // single-shot paste

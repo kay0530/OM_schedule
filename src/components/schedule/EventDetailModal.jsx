@@ -33,6 +33,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
   const [editDate, setEditDate] = useState('');
   const [editStartTime, setEditStartTime] = useState('08:00');
   const [editEndTime, setEditEndTime] = useState('09:00');
+  const [editIsAllDay, setEditIsAllDay] = useState(false);
   const [editMemberIds, setEditMemberIds] = useState([]);
   const [editLocation, setEditLocation] = useState('');
   const [editMemo, setEditMemo] = useState('');
@@ -89,6 +90,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setEditDate(eventDate);
       setEditStartTime(startTime);
       setEditEndTime(endTime);
+      setEditIsAllDay(!!event.isAllDay);
       // Pre-select all group members (or just self for non-group events)
       const groupMemberIds = event.groupId
         ? assignmentsRef.current.filter((a) => a.groupId === event.groupId).map((a) => a.memberId)
@@ -153,6 +155,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     setEditDate(ed);
     setEditStartTime(st);
     setEditEndTime(et);
+    setEditIsAllDay(!!event.isAllDay);
     const groupMemberIds = event.groupId
       ? assignments.filter((a) => a.groupId === event.groupId).map((a) => a.memberId)
       : (event.memberId ? [event.memberId] : []);
@@ -181,7 +184,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setError('日付を選択してください');
       return;
     }
-    if (editStartTime >= editEndTime) {
+    if (!editIsAllDay && editStartTime >= editEndTime) {
       setError('終了時間は開始時間より後にしてください');
       return;
     }
@@ -195,15 +198,38 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     setError(null);
 
     try {
+      // Effective times: when 終日, force 00:00 - 24:00
+      const effStart = editIsAllDay ? '00:00' : editStartTime;
+      const effEnd = editIsAllDay ? '24:00' : editEndTime;
+
       const sharedUpdates = {
         opportunityName: editTitle,
         title: editTitle,
         date: editDate,
-        startTime: editStartTime,
-        endTime: editEndTime,
+        startTime: effStart,
+        endTime: effEnd,
+        isAllDay: editIsAllDay,
         address: editLocation,
         scheduleMemo: editMemo,
       };
+
+      // Outlook event body builder — all-day events use a different shape
+      const buildOutlookBody = () => editIsAllDay
+        ? {
+            subject: editTitle,
+            isAllDay: true,
+            start: { dateTime: `${editDate}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${editDate}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: editLocation || '' },
+            body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
+          }
+        : {
+            subject: editTitle,
+            start: { dateTime: `${editDate}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${editDate}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: editLocation || '' },
+            body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
+          };
 
       const outlookErrors = [];
       const token = (syncToOutlook && isAuthenticated) ? await getToken() : null;
@@ -235,23 +261,11 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             const m = MEMBERS.find((mm) => mm.id === a.memberId);
             if (m && !m.skipOutlookSync) {
               if (a.outlookEventId) {
-                const result = await updateCalendarEvent(token, m.email, a.outlookEventId, {
-                  subject: editTitle,
-                  start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
-                  end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
-                  location: { displayName: editLocation || '' },
-                  body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
-                });
+                const result = await updateCalendarEvent(token, m.email, a.outlookEventId, buildOutlookBody());
                 if (!result.success) outlookErrors.push(`${m.nameJa}: ${result.error}`);
               } else {
                 // No outlookEventId yet — create one
-                const result = await createCalendarEvent(token, m.email, {
-                  subject: editTitle,
-                  start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
-                  end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
-                  location: { displayName: editLocation || '' },
-                  body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
-                });
+                const result = await createCalendarEvent(token, m.email, buildOutlookBody());
                 if (result.success && result.data?.id) {
                   dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, outlookEventId: result.data.id } });
                 } else if (!result.success) {
@@ -267,13 +281,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           const m = MEMBERS.find((mm) => mm.id === memberId);
           let outlookEventId = null;
           if (token && m && !m.skipOutlookSync) {
-            const result = await createCalendarEvent(token, m.email, {
-              subject: editTitle,
-              start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: editLocation || '' },
-              body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
-            });
+            const result = await createCalendarEvent(token, m.email, buildOutlookBody());
             if (result.success) outlookEventId = result.data?.id || null;
             else outlookErrors.push(`${m?.nameJa || memberId}: ${result.error}`);
           }
@@ -290,9 +298,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
               memberId,
               memberEmail: m?.email || null,
               date: editDate,
-              startTime: editStartTime,
-              endTime: editEndTime,
-              isAllDay: event.isAllDay || false,
+              startTime: effStart,
+              endTime: effEnd,
+              isAllDay: editIsAllDay,
               isDelivery: event.isDelivery || false,
               syncOutlook: syncToOutlook,
               address: editLocation,
@@ -316,20 +324,14 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
         }
       } else if (isOutlook && token) {
         // Pure Outlook event — update only this one
-        const result = await updateCalendarEvent(token, event.memberEmail, event.id, {
-          subject: editTitle,
-          start: { dateTime: `${editDate}T${editStartTime}:00`, timeZone: 'Asia/Tokyo' },
-          end: { dateTime: `${editDate}T${editEndTime}:00`, timeZone: 'Asia/Tokyo' },
-          location: { displayName: editLocation || '' },
-          body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
-        });
+        const result = await updateCalendarEvent(token, event.memberEmail, event.id, buildOutlookBody());
         if (!result.success) {
           outlookErrors.push(`${event.memberEmail}: ${result.error}`);
         } else {
           setEvents(
             events.map((e) =>
               e.id === event.id
-                ? { ...e, title: editTitle, start: `${editDate}T${editStartTime}:00`, end: `${editDate}T${editEndTime}:00`, location: editLocation }
+                ? { ...e, title: editTitle, start: `${editDate}T${effStart}:00`, end: `${editDate}T${effEnd}:00`, location: editLocation, isAllDay: editIsAllDay }
                 : e
             )
           );
@@ -512,33 +514,46 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                   />
                 </div>
 
-                {/* Time */}
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <label className="block text-xs text-gray-500 mb-1">開始時間</label>
-                    <select
-                      value={editStartTime}
-                      onChange={(e) => setEditStartTime(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    >
-                      {TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+                {/* All-day toggle */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editIsAllDay}
+                    onChange={(e) => setEditIsAllDay(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">終日</span>
+                </label>
+
+                {/* Time (hidden when 終日) */}
+                {!editIsAllDay && (
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-500 mb-1">開始時間</label>
+                      <select
+                        value={editStartTime}
+                        onChange={(e) => setEditStartTime(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      >
+                        {TIME_OPTIONS.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-500 mb-1">終了時間</label>
+                      <select
+                        value={editEndTime}
+                        onChange={(e) => setEditEndTime(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      >
+                        {TIME_OPTIONS.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <label className="block text-xs text-gray-500 mb-1">終了時間</label>
-                    <select
-                      value={editEndTime}
-                      onChange={(e) => setEditEndTime(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    >
-                      {TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                )}
 
                 {/* Members (multi-select) */}
                 <div>
