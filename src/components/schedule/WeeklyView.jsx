@@ -228,12 +228,13 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       const dateStr = toISODate(date);
       return events.filter((e) => {
         if (!e.isAllDay) return false;
+        if (linkedOutlookIds.has(e.id)) return false; // already shown as assignment
         const eventStart = e.start.substring(0, 10);
         const eventEnd = e.end ? e.end.substring(0, 10) : eventStart;
         return dateStr >= eventStart && dateStr < eventEnd && e.memberEmail === memberEmail.toLowerCase();
       });
     },
-    [events]
+    [events, linkedOutlookIds]
   );
 
   // Get all-day ASSIGNMENTS for a member + date (rendered in the 終日 row)
@@ -760,7 +761,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 {allDayEvts.map((evt) => (
                                   <div
                                     key={evt.id}
-                                    className="text-[10px] font-medium leading-tight truncate rounded px-1 py-1 mb-0.5"
+                                    className="text-[10px] font-medium leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer"
                                     style={useOutlookColor ? {
                                       backgroundColor: member.color,
                                       color: 'white',
@@ -770,6 +771,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                       borderLeft: '3px solid #9CA3AF',
                                     }}
                                     title={evt.title}
+                                    onClick={(e) => { e.stopPropagation(); onEventClick(evt); }}
+                                    onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(evt); }}
                                   >
                                     {evt.title}
                                   </div>
