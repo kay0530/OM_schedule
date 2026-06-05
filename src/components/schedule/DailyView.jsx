@@ -361,53 +361,6 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                 ))}
               </div>
 
-              {/* Delivery row */}
-              <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
-                <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-orange-500 font-medium sticky left-0 z-30 bg-white">
-                  納品
-                </div>
-                {visibleOrderedMembers.map((member, mIdx) => {
-                  const deliveries = getDeliveriesForMember(member.id);
-                  const cellKey = `delivery-${dateStr}-${member.id}`;
-                  const isDragOver = dragOverCell === cellKey;
-                  return (
-                    <div
-                      key={cellKey}
-                      className={`flex-1 min-w-[80px] overflow-hidden px-0.5 py-0.5 transition-colors ${
-                        mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
-                      } ${isDragOver ? 'bg-orange-100/60 ring-1 ring-inset ring-orange-400' : ''}`}
-                      onDragOver={(e) => { e.preventDefault(); setDragOverCell(cellKey); }}
-                      onDragLeave={handleDragLeave}
-                      onDrop={(e) => handleDeliveryDrop(e, member.id)}
-                      onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(dateStr, '08:00', member.id, { isDelivery: true })}
-                    >
-                      {deliveries.map((d) => {
-                        const synced = !!d.outlookEventId;
-                        return (
-                        <div
-                          key={d.id}
-                          className={`text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1 ${
-                            synced
-                              ? 'bg-orange-100 border-l-2 border-orange-500 text-orange-700'
-                              : 'bg-orange-50 border-l-2 border-dashed border-orange-400 text-orange-600'
-                          }`}
-                          title={`${d.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
-                          onClick={(e) => { e.stopPropagation(); onEventClick(d); }}
-                        >
-                          <span className={`text-[7px] leading-none px-0.5 rounded font-bold ${
-                            synced ? 'bg-emerald-600 text-white' : 'bg-amber-400 text-amber-900'
-                          }`}>
-                            {synced ? '✓' : '仮'}
-                          </span>
-                          <span className="truncate">{d.opportunityName?.replace('【納品】', '')}</span>
-                        </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-
               {/* All-day events */}
               {hasAnyAllDayEvents && (
                 <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
