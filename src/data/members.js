@@ -13,6 +13,7 @@ export const MEMBERS = [
   { id: 'wano_t', nameJa: '和埜', nameEn: 'Wano', email: 'tatsuto.wano@altenergy.co.jp', color: '#8B5CF6', role: 'regular' },
   { id: 'seto_r', nameJa: '瀬戸', nameEn: 'Seto', email: 'nstandard.info@gmail.com', color: '#14B8A6', role: 'regular', skipOutlookSync: true }, // Gmail user
   { id: 'tago_s', nameJa: '田子', nameEn: 'Tago', email: 'shoichiro.tago@altenergy.co.jp', color: '#A855F7', role: 'preparation' },
+  { id: 'delivery', nameJa: '納品', nameEn: 'Delivery', email: 'powermaru@altenergy.co.jp', color: '#D97706', role: 'delivery' },
 ];
 
 export const MEMBER_ORDER = MEMBERS.map(m => m.id);
