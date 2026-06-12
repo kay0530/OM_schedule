@@ -548,7 +548,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                       return (
                         <div
                           key={toISODate(date)}
-                          className={`flex-1 text-center py-2 ${
+                          className={`flex-1 min-w-0 text-center py-2 ${
                             dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
                           } ${today ? 'bg-accent-soft' : ''}`}
                          
@@ -599,7 +599,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                       {displayDates.map((date, dIdx) => (
                         <div
                           key={`allday-${toISODate(date)}`}
-                          className={`flex-1 flex ${
+                          className={`flex-1 min-w-0 flex ${
                             dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
                           }`}
                          
@@ -685,7 +685,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                     return (
                       <div
                         key={toISODate(date)}
-                        className={`flex-1 flex relative ${
+                        className={`flex-1 min-w-0 flex relative ${
                           dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
                         } ${today ? 'bg-today' : ''}`}
                        
@@ -794,7 +794,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                     {visibleOrderedMembers.map((member, mIdx) => (
                       <div
                         key={member.id}
-                        className={`flex-1 text-center py-2 ${
+                        className={`flex-1 min-w-0 text-center py-2 ${
                           mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                         }`}
                        
@@ -843,7 +843,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                       {visibleOrderedMembers.map((member, mIdx) => (
                         <div
                           key={`allday-member-${member.id}`}
-                          className={`flex-1 flex ${
+                          className={`flex-1 min-w-0 flex ${
                             mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                           }`}
                          
@@ -921,7 +921,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                   {visibleOrderedMembers.map((member, mIdx) => (
                     <div
                       key={member.id}
-                      className={`flex-1 flex relative ${
+                      className={`flex-1 min-w-0 flex relative ${
                         mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                       }`}
                      
