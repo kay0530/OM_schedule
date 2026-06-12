@@ -28,49 +28,43 @@ npm run sync-sf # Salesforce 商談+点検修繕データ同期
 ```
 src/
 ├── main.jsx                    # Entry point
-├── App.jsx                     # Root component, view routing (default: weekly)
+├── App.jsx                     # Root component, view routing, copy/paste, Outlook reconcile
 ├── firebase.js                 # Firebase initialization (env-based config)
-├── index.css                   # Tailwind imports
+├── index.css                   # Tailwind 4 + テーマトークン (:root / [data-theme=dark]) + event chip CSS
 ├── context/
-│   ├── AppContext.jsx          # Assignments + settings (localStorage + Firestore sync)
+│   ├── AppContext.jsx          # Assignments + settings (localStorage + Firestore sync, tombstones/pendingAdds)
 │   ├── AuthContext.jsx         # MSAL auth state
 │   └── CalendarContext.jsx     # Outlook calendar events
 ├── services/
 │   ├── msalService.js          # MSAL instance factory, login/logout, config persistence
-│   ├── graphCalendarService.js # Graph API: fetch/create/update/delete calendar events
+│   ├── graphCalendarService.js # Graph API: fetch/create/update/delete calendar events (DELETE 404=成功扱い)
 │   ├── calendarService.js      # Calendar data transformation
-│   └── firestoreService.js     # Firestore CRUD: assignments + filter presets (real-time sync)
+│   ├── firestoreService.js     # Firestore CRUD: assignments + filter presets (real-time sync)
+│   └── githubSyncService.js    # 手動SF同期: GitHub Actions workflow_dispatch (PATはlocalStorage)
 ├── hooks/
-│   └── useCalendarSync.js      # Outlook sync hook
+│   ├── useCalendarSync.js      # Outlook sync hook
+│   └── useModalDrag.js         # モーダルのドラッグ移動 (全モーダル共通)
 ├── data/
-│   ├── members.js              # 9 construction team members (瀬戸は skipOutlookSync)
+│   ├── members.js              # 10名 + 納品(powermaru@altenergy.co.jp, delivery疑似メンバー)
 │   ├── statusTypes.js          # Status types (不可, 休み, 移動, 現場)
-│   ├── opportunities.json      # Synced SF opportunities (レンタル, 586件)
-│   └── maintenances.json       # Synced SF maintenance records (点検／修繕, 565件)
+│   ├── workCategories.js       # 作業種別カタログ + タイトル【...】プレフィックス解析
+│   ├── opportunities.json      # Synced SF opportunities (レンタル)
+│   ├── self-consumption.json   # Synced SF opportunities (自家消費/PV)
+│   ├── maintenances.json       # Synced SF maintenance records (点検／修繕)
+│   └── sync-meta.json          # SF最終同期時刻
 ├── utils/
-│   └── dateUtils.js            # Date/time helpers
+│   ├── dateUtils.js            # Date/time helpers
+│   ├── colorUtils.js           # getContrastText (YIQ, チップ文字色)
+│   └── eventLayout.js          # 重複イベントのレーン割付 (Outlook風横並び)
 ├── components/
-│   ├── layout/
-│   │   ├── MainLayout.jsx      # App shell (header + sidebar + job panel + content)
-│   │   ├── Header.jsx          # Top bar: navigation, Outlook同期, MS365ログイン
-│   │   └── Sidebar.jsx         # Left nav (月間/週間/設定)
-│   ├── schedule/
-│   │   ├── MonthlyView.jsx     # Excel風 月間グリッド (メンバーフィルター付き, 全幅)
-│   │   ├── WeeklyView.jsx      # Outlook風 週間ビュー (日付軸/人軸切替, 0-24時)
-│   │   ├── EventBlock.jsx      # イベントブロック (ドラッグ移動/リサイズ対応)
-│   │   ├── EventDetailModal.jsx # イベント詳細/編集モーダル (Outlook反映対応)
-│   │   ├── AssignModal.jsx     # SF案件→メンバー割当モーダル (Outlook登録対応)
-│   │   ├── QuickAddModal.jsx   # ダブルクリック手動入力モーダル
-│   │   └── StatusOverlay.jsx   # 不可/休み/移動オーバーレイ
-│   ├── jobs/
-│   │   ├── JobPanel.jsx        # 右サイドバー (レンタル商談/点検修繕タブ, フィルター保存)
-│   │   └── JobCard.jsx         # 案件カード (ドラッグ対応)
-│   ├── settings/
-│   │   └── SettingsView.jsx    # Azure AD設定, SF同期, データ管理
-│   └── shared/
-│       └── Toast.jsx           # Toast notifications
+│   ├── layout/                 # MainLayout / Header (ナビ一本化+テーマ切替) / Sidebar
+│   ├── schedule/               # Weekly/Daily/Monthly + EventBlock + 各モーダル + StatusOverlay + AllDayOverlay
+│   ├── jobs/                   # JobPanel (SF同期ボタン付き) + JobCard
+│   ├── settings/               # SettingsView (テーマ/Azure AD/SF同期+GitHubトークン/データ管理)
+│   ├── shared/                 # Toast / ThemeApplier / FilterPopover
+│   └── auth/                   # LoginGate
 scripts/
-└── sync-sf.mjs                 # Salesforce CLI sync (レンタル商談 + 点検修繕)
+└── sync-sf.mjs                 # Salesforce CLI sync (レンタル+自家消費+点検修繕)
 ```
 
 ## Key Features
@@ -132,7 +126,7 @@ FROM Maintenance__c
 WHERE Status__c NOT IN ('完了')
 ```
 
-## Members (9名 + 瀬戸)
+## Members (10名 + 納品カレンダー)
 | ID | 名前 | メール | 色 | 備考 |
 |----|------|--------|-----|------|
 | hiroki_n | 廣木 | norifumi.hiroki@altenergy.co.jp | #3B82F6 | |
@@ -145,11 +139,14 @@ WHERE Status__c NOT IN ('完了')
 | wano_t | 和埜 | tatsuto.wano@altenergy.co.jp | #8B5CF6 | |
 | seto_r | 瀬戸 | nstandard.info@gmail.com | #14B8A6 | Gmail, skipOutlookSync |
 | tago_s | 田子 | shoichiro.tago@altenergy.co.jp | #A855F7 | 準備要員 |
+| delivery | 納品 | powermaru@altenergy.co.jp | #D97706 | 納品専用カレンダー（疑似メンバー） |
 
 ## State Management
 - **AppContext** -- `useReducer` + Firestore real-time sync
-  - Actions: `ADD_ASSIGNMENT`, `UPDATE_ASSIGNMENT`, `DELETE_ASSIGNMENT`, `SET_ASSIGNMENTS`, `UPDATE_SETTINGS`
-  - `fromFirestoreRef` でループ防止
+  - Actions: `ADD_ASSIGNMENT`, `UPDATE_ASSIGNMENT`, `UPDATE_ASSIGNMENTS_BULK`, `DELETE_ASSIGNMENT`, `SET_ASSIGNMENTS`, `UPDATE_SETTINGS`
+  - `fromFirestoreRef` でループ防止 / デバウンス書込 / tombstone / pendingAdds（詳細は「実装上の重要な制約」参照）
+  - settings: workingHours, showWeekends, colorOutlookEvents, theme, hiddenMemberIds, hiddenCategoryIds, viewAxis
+  - assignment の重要フィールド: outlookEventId（Outlook連携・✓/仮判定）, groupId（複数人一括編集）, workCategory, isAllDay, isDelivery(旧)
 - **CalendarContext** -- Outlook イベント管理 + localStorage 永続化
 - **AuthContext** -- MSAL 認証状態
 
@@ -166,14 +163,42 @@ WHERE Status__c NOT IN ('完了')
 - Config: `.env` (ローカル) / GitHub Secrets (デプロイ)
 - Security Rules: テストモード (30日期限 → 本番ルール要設定)
 
+## ⚠️ 実装上の重要な制約（ハマりどころ — 必読）
+1. **EventBlock に filter系ホバー効果（hover:brightness等）を追加禁止** — CSS filter がドラッグ対象に掛かると Chromium が HTML5 ドラッグを即中断するバグがあり、割当の移動が死ぬ（一度発生→修正済み）
+2. **Tailwind 4 は author の `@layer components` ブロックを出力から削除する** — チップCSS（.event-solid 等）は index.css に非レイヤーで記述。非レイヤーCSSはユーティリティに勝つため、ring/shadow と衝突する box-shadow は使わず **outline** でヘアラインを実現している
+3. **flex列の整列**: ヘッダー/終日行/グリッド本体の列ラッパーは全て `flex-1 min-w-0` で統一（1つでも欠けるとチップのテキスト幅で列がズレる）
+4. **Firestore 競合対策**（AppContext）: 書込は800msデバウンス / 削除は tombstone(5分TTL) / 追加は pendingAdds(60秒TTL) で保護 / **初回ロード完了前の書込は禁止**（新規端末が空配列でサーバーを潰した事故の再発防止）
+5. **EventDetailModal のフィールド初期化 useEffect は `[event?.id, isOpen]` 依存のみ**（assignments を入れると Outlook自動取込で編集モードが解除される）
+6. **Graph DELETE の 404 は成功扱い**（既に消えている＝成功）
+
+## UI/UX 仕様（2026-06-12 大規模刷新後）
+- **テーマ**: ライト/ダーク/システム連動。トークンは index.css の `:root` / `[data-theme=dark]`、`@theme inline` で bg-surface 等のユーティリティ生成。FOUCガードは index.html（storage key 変更時は要同期）。設定は端末ごと（Firestore非共有）
+- **イベントチップ**: 同期済み=メンバー色ベタ塗り+YIQコントラスト文字(.event-solid) / 仮(未送信)=淡色+破線+ハッチ(.event-tint) / 無色Outlook・ステータス=.event-neutral。`--mc`/`--on-mc` CSS変数で着色
+- **ツールバー1段**: 週ラベル+軸切替+FilterPopover(作業種別/メンバー)+Outlook色+週末トグル。フィルターは settings(hiddenMemberIds/hiddenCategoryIds/viewAxis) で全ビュー共有・永続化
+- **営業時間外シェーディング**: settings.workingHours 外と週末列を減光（帯は pointer-events-none）
+- **列幅**: レスポンシブ縮小で全員1画面表示（横スクロールなし。min-width強制は撤回済み）
+- **コピペ**: 予定選択→Ctrl+C → 貼り付け先マスをクリック（アクセントリング表示）→ Ctrl+V で即貼付。マス未選択時のCtrl+Vは旧来の「次クリックで貼付」モード
+- **モーダル**: 全モーダル（詳細/割当/手動入力）がヘッダードラッグで移動可（useModalDrag）
+- **手動SF同期**: JobPanelの🔄 → GitHub Actions workflow_dispatch起動→デプロイ完了まで追跡。要 Fine-grained PAT（**各自発行・共有禁止**、設定画面で端末ごとに保存）。未設定者は30分自動同期のみ
+- 設計書全文: `docs-ui-redesign-spec.md`（PHASE-2未着手項目あり）
+
 ## Known Issues / TODO
-- ドラッグ&ドロップ: EventBlock overlay が drop target を遮る問題 → dragStart 時に pointer-events:none で回避中
-- Outlook イベント作成: `/users/{email}/events` で他ユーザーカレンダーに書込 → Calendars.ReadWrite.Shared 権限が必要
+- **PHASE-2（未着手、docs-ui-redesign-spec.md 参照）**: Outlook風日付ヘッダーピル(P2-1) / 現在時刻ガターチップ(P2-2) / StatusOverlayのトークン化(P2-3) / テーマlintガード(P2-5) / Sidebarメンバーリスト(P2-6) / 仮予定の一括Outlook送信(P2-7)
+- 旧 `isDelivery: true` の納品予定はUI非表示（データは残存）。納品行は廃止済み、以後は「納品」メンバー(powermaru@)のカレンダーで運用
 - Firestore セキュリティルール: テストモード → 本番ルールへの移行が必要
 - 瀬戸さん: Gmail ユーザーのため Outlook 同期不可、手動入力のみ
+- Outlook イベント作成: `/users/{email}/events` で他ユーザーカレンダーに書込 → Calendars.ReadWrite.Shared 権限が必要
+- テーマ既定値は 'light'（全画面のダーク対応が安定したら 'system' 化を検討）
+- 手動SF同期を全員に開放する場合は、PAT分散ではなくサーバー側シークレット（Cloudflare Workers等の中継 + MSAL検証）構成にすること
+
+## 直近セッション (2026-06-12) の状態
+- Outlook風UI刷新（テーマ/ソリッドチップ/1段ツールバー/シェーディング）実装・レビュー・デプロイ済み
+- 刷新後の退行3件を修正済み: ドラッグ移動不能(filterバグ) / 終日チップの列ズレ / 横スクロール撤回
+- Ctrl+V を「マス選択→V で即貼付」に変更済み
+- **ユーザー確認待ち**: モーダルのドラッグ移動、新コピペフロー、手動SF同期ボタン（PAT発行が前提）
 
 ## Conventions
 - UI テキストは日本語、コード内コメント・変数名は英語
-- Tailwind CSS でスタイリング (CSS ファイルは index.css のみ)
+- Tailwind CSS でスタイリング（テーマトークン bg-surface/text-ink/border-edge 等を使用。bg-white/gray-* の直書き禁止）
 - コンポーネントは default export
 - Conventional Commit 形式 (feat:, fix:, refactor:)
