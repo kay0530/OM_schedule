@@ -34,12 +34,14 @@ src/
 ├── context/
 │   ├── AppContext.jsx          # Assignments + settings (localStorage + Firestore sync, tombstones/pendingAdds)
 │   ├── AuthContext.jsx         # MSAL auth state
-│   └── CalendarContext.jsx     # Outlook calendar events
+│   ├── CalendarContext.jsx     # Outlook calendar events
+│   └── SfDataContext.jsx       # SFデータ (商談/自家消費/点検修繕) のFirestore購読
 ├── services/
 │   ├── msalService.js          # MSAL instance factory, login/logout, config persistence
 │   ├── graphCalendarService.js # Graph API: fetch/create/update/delete calendar events (DELETE 404=成功扱い)
 │   ├── calendarService.js      # Calendar data transformation
 │   ├── firestoreService.js     # Firestore CRUD: assignments + filter presets (real-time sync)
+│   ├── sfDataService.js        # SFデータ購読 (om-schedule-sf-data, チャンク再結合)
 │   └── githubSyncService.js    # 手動SF同期: GitHub Actions workflow_dispatch (PATはlocalStorage)
 ├── hooks/
 │   ├── useCalendarSync.js      # Outlook sync hook
@@ -47,11 +49,8 @@ src/
 ├── data/
 │   ├── members.js              # 10名 + 納品(powermaru@altenergy.co.jp, delivery疑似メンバー)
 │   ├── statusTypes.js          # Status types (不可, 休み, 移動, 現場)
-│   ├── workCategories.js       # 作業種別カタログ + タイトル【...】プレフィックス解析
-│   ├── opportunities.json      # Synced SF opportunities (レンタル)
-│   ├── self-consumption.json   # Synced SF opportunities (自家消費/PV)
-│   ├── maintenances.json       # Synced SF maintenance records (点検／修繕)
-│   └── sync-meta.json          # SF最終同期時刻
+│   └── workCategories.js       # 作業種別カタログ + タイトル【...】プレフィックス解析
+│   # ⚠️ SFデータ(JSON)はリポジトリに置かない — Firestoreから配信 (公開リポジトリのため)
 ├── utils/
 │   ├── dateUtils.js            # Date/time helpers
 │   ├── colorUtils.js           # getContrastText (YIQ, チップ文字色)
@@ -64,8 +63,16 @@ src/
 │   ├── shared/                 # Toast / ThemeApplier / FilterPopover
 │   └── auth/                   # LoginGate
 scripts/
-└── sync-sf.mjs                 # Salesforce CLI sync (レンタル+自家消費+点検修繕)
+└── sync-sf.mjs                 # Salesforce CLI sync → Firestore直書き (レンタル+自家消費+点検修繕)
 ```
+
+## SF データ同期アーキテクチャ (2026-06-12 Firestore化)
+- `sync-sf.yml` (30分cron + workflow_dispatch) が SF CLI でクエリ → **Firestore `om-schedule-sf-data` コレクションに直接書込**（リポジトリへのコミット・再デプロイは廃止）
+- ドキュメント構造: `meta` (syncedAt/件数/chunks) + `<dataset>-<i>` (`records`配列, 200件/チャンク)。全docを単一バッチでatomicに更新、縮小時は余剰チャンク削除
+- アプリは `SfDataContext` が `onSnapshot` で購読 → **同期結果は再読込なしで即時反映**
+- 手動同期: JobPanelの🔄 → workflow_dispatch → run完了待ち(~1分) → Firestore経由で自動反映。要Fine-grained PAT(設定画面で端末ごと保存)
+- `npm run sync-sf` のローカル実行には `.env` の VITE_FIREBASE_* が必要（CIはGitHub Secrets）
+- **顧客データをリポジトリに入れないこと**（Public。2026-06-12にgit履歴からも全除去済み・force push実施）
 
 ## Key Features
 
@@ -96,7 +103,8 @@ scripts/
 ### Firestore リアルタイム共有
 - **割当 (assignments)**: `om-schedule-assignments` コレクション → 全ユーザー間で即時同期
 - **フィルタープリセット**: `om-schedule-filter-presets` コレクション → 共有
-- localStorage フォールバック (Firebase未設定時)
+- **SFデータ**: `om-schedule-sf-data` コレクション → 同期ワークフローが書込、全ユーザーへ即時配信
+- localStorage フォールバック (Firebase未設定時、SFデータは除く)
 
 ### フィルタープリセット
 - ステージ/ステータスの選択状態を名前付きで保存
@@ -159,9 +167,9 @@ WHERE Status__c NOT IN ('完了')
 ## Firebase Config
 - Project: `om-schedule`
 - Firestore Location: `asia-northeast1` (Tokyo)
-- Collections: `om-schedule-assignments`, `om-schedule-filter-presets`
-- Config: `.env` (ローカル) / GitHub Secrets (デプロイ)
-- Security Rules: テストモード (30日期限 → 本番ルール要設定)
+- Collections: `om-schedule-assignments`, `om-schedule-filter-presets`, `om-schedule-sf-data`
+- Config: `.env` (ローカル) / GitHub Secrets (デプロイ・同期)
+- Security Rules: テストモード (30日期限 → 本番ルール要設定)。**SFデータ(顧客情報)がFirestoreに載ったためルール強化の優先度UP** — Firebase AuthのMicrosoftプロバイダ連携 + ドメイン制限ルールが本命
 
 ## ⚠️ 実装上の重要な制約（ハマりどころ — 必読）
 1. **EventBlock に filter系ホバー効果（hover:brightness等）を追加禁止** — CSS filter がドラッグ対象に掛かると Chromium が HTML5 ドラッグを即中断するバグがあり、割当の移動が死ぬ（一度発生→修正済み）
@@ -179,23 +187,25 @@ WHERE Status__c NOT IN ('完了')
 - **列幅**: レスポンシブ縮小で全員1画面表示（横スクロールなし。min-width強制は撤回済み）
 - **コピペ**: 予定選択→Ctrl+C → 貼り付け先マスをクリック（アクセントリング表示）→ Ctrl+V で即貼付。マス未選択時のCtrl+Vは旧来の「次クリックで貼付」モード
 - **モーダル**: 全モーダル（詳細/割当/手動入力）がヘッダードラッグで移動可（useModalDrag）
-- **手動SF同期**: JobPanelの🔄 → GitHub Actions workflow_dispatch起動→デプロイ完了まで追跡。要 Fine-grained PAT（**各自発行・共有禁止**、設定画面で端末ごとに保存）。未設定者は30分自動同期のみ
+- **手動SF同期**: JobPanelの🔄 → GitHub Actions workflow_dispatch起動→run完了(~1分)→Firestore経由で自動反映（再読込不要）。要 Fine-grained PAT（**各自発行・共有禁止**、設定画面で端末ごとに保存）。未設定者は30分自動同期のみ
 - 設計書全文: `docs-ui-redesign-spec.md`（PHASE-2未着手項目あり）
 
 ## Known Issues / TODO
 - **PHASE-2（未着手、docs-ui-redesign-spec.md 参照）**: Outlook風日付ヘッダーピル(P2-1) / 現在時刻ガターチップ(P2-2) / StatusOverlayのトークン化(P2-3) / テーマlintガード(P2-5) / Sidebarメンバーリスト(P2-6) / 仮予定の一括Outlook送信(P2-7)
 - 旧 `isDelivery: true` の納品予定はUI非表示（データは残存）。納品行は廃止済み、以後は「納品」メンバー(powermaru@)のカレンダーで運用
-- Firestore セキュリティルール: テストモード → 本番ルールへの移行が必要
+- Firestore セキュリティルール: テストモード → 本番ルールへの移行が必要。**現状はFirebase設定値を知っていればSFデータを直接読める**（設定値はバンドルに含まれる）。LoginGateはUI層のみのガード。本対策= Firebase Auth (Microsoftプロバイダ) + `@altenergy.co.jp` ドメイン制限ルール
 - 瀬戸さん: Gmail ユーザーのため Outlook 同期不可、手動入力のみ
 - Outlook イベント作成: `/users/{email}/events` で他ユーザーカレンダーに書込 → Calendars.ReadWrite.Shared 権限が必要
 - テーマ既定値は 'light'（全画面のダーク対応が安定したら 'system' 化を検討）
 - 手動SF同期を全員に開放する場合は、PAT分散ではなくサーバー側シークレット（Cloudflare Workers等の中継 + MSAL検証）構成にすること
 
-## 直近セッション (2026-06-12) の状態
-- Outlook風UI刷新（テーマ/ソリッドチップ/1段ツールバー/シェーディング）実装・レビュー・デプロイ済み
-- 刷新後の退行3件を修正済み: ドラッグ移動不能(filterバグ) / 終日チップの列ズレ / 横スクロール撤回
-- Ctrl+V を「マス選択→V で即貼付」に変更済み
+## 直近セッション (2026-06-12 午後) の状態
+- **SFデータ配信をFirestore化**: 同期のコミット/再デプロイ廃止、即時反映に。手動同期は約1分で完結
+- **顧客データをPublicリポジトリから完全除去**: 現行ツリー + git全履歴（filter-repoで1038→96コミット、force push済み）。ミラーバックアップ: `Claude_Code_Demo/58_OM_schedule_backup-260612.git`（旧履歴。不要になったら削除可）
+- deploy.yml の workflow_run トリガー除去（同期ごとの再デプロイ廃止）
 - **ユーザー確認待ち**: モーダルのドラッグ移動、新コピペフロー、手動SF同期ボタン（PAT発行が前提）
+- 退避ブランチ `stale-confirm-date-filters`（ローカルのみ・旧履歴ベース）: 4月の未マージ機能（仮現調/完工の確定日フィールド+フィルター）。現行UIに本現調/着工確定は実装済みのため、残りが必要なら移植を検討
+- 注意: 旧履歴のコミットSHAはGitHubのキャッシュに当面残存し得る（完全削除はGitHub Support依頼が必要）。リポジトリのPrivate化 or ホスティング移行（Azure Static Web Apps等）が次の本丸
 
 ## Conventions
 - UI テキストは日本語、コード内コメント・変数名は英語
