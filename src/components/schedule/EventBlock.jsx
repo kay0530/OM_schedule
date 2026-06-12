@@ -131,11 +131,14 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
     document.addEventListener('mouseup', onMouseUp);
   }, [isAssignment, hourHeight, endMinutes, startMinutes, endTime, event, onResizeEnd]);
 
+  // NOTE: never add filter-based hover effects (hover:brightness etc.) to
+  // this element — a CSS filter on the dragged element makes Chromium abort
+  // HTML5 drag immediately, breaking drag-to-move.
   return (
     <div
       ref={blockRef}
       data-event-block="true"
-      className={`absolute rounded overflow-hidden cursor-pointer transition-shadow hover:shadow-md hover:brightness-105 ${chipClass} ${
+      className={`absolute rounded overflow-hidden cursor-pointer transition-shadow hover:shadow-md ${chipClass} ${
         isResizing ? 'opacity-80 shadow-lg' : ''
       } ${isDraggable ? 'select-none' : ''} ${isActive ? 'ring-2 ring-accent ring-offset-1 ring-offset-surface' : ''}`}
       title={`${title}${startTime && endTime ? ` (${startTime}–${endTime})` : ''}${event.location ? `\n📍 ${event.location}` : ''}${isAssignment ? (isSyncedToOutlook ? '\n✓ Outlook送信済み' : '\n仮（未送信）') : ''}`}
