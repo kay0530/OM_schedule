@@ -18,11 +18,6 @@ import StatusOverlay from './StatusOverlay';
 import AllDayOverlay from './AllDayOverlay';
 import FilterPopover from '../shared/FilterPopover';
 
-// Minimum sub-column widths (px) so columns never collapse into unreadable
-// slivers — the grid scrolls horizontally instead (P1-9)
-const PERSON_SUBCOL_MIN_W = 88;
-const DAY_SUBCOL_MIN_W = 76;
-
 // Time grid constants
 const HOUR_HEIGHT = 60; // pixels per hour
 const START_HOUR = 0;
@@ -434,10 +429,6 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       </>
     );
 
-  // Width helpers (P1-9): keep header / all-day / body column widths in sync
-  const dayColMinWidth = Math.max(visibleOrderedMembers.length * DAY_SUBCOL_MIN_W, 120);
-  const personColMinWidth = displayDates.length * PERSON_SUBCOL_MIN_W;
-
   // All-day chip class helper (P1-4): solid for synced/Outlook, tint for drafts
   const alldayChipClass = (solid) => (solid ? 'event-solid' : 'event-tint');
 
@@ -543,9 +534,9 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
             {axisMode === 'date' && (
               <>
                 {/* Sticky header */}
-                <div className="sticky top-0 z-20 bg-raised border-b border-edge w-max min-w-full">
+                <div className="sticky top-0 z-20 bg-raised border-b border-edge">
                   {/* Day headers row */}
-                  <div className="flex w-max min-w-full">
+                  <div className="flex">
                     {/* Time column spacer */}
                     <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-30 bg-raised" />
 
@@ -560,7 +551,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                           className={`flex-1 text-center py-2 ${
                             dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
                           } ${today ? 'bg-accent-soft' : ''}`}
-                          style={{ minWidth: `${dayColMinWidth}px` }}
+                         
                         >
                           <div className={`text-xs ${isWeekend ? 'text-ink-faint' : 'text-ink-muted'}`}>
                             {getDayNameJa(date)}
@@ -599,7 +590,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
 
                   {/* All-day events banner */}
                   {hasAnyAllDayEvents && (
-                    <div className="flex w-max min-w-full border-t border-edge" style={{ minHeight: '24px' }}>
+                    <div className="flex border-t border-edge" style={{ minHeight: '24px' }}>
                       {/* Time label */}
                       <div className="w-14 shrink-0 border-r border-edge flex items-center justify-end pr-2 text-[10px] text-ink-faint sticky left-0 z-30 bg-raised">
                         終日
@@ -611,7 +602,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                           className={`flex-1 flex ${
                             dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
                           }`}
-                          style={{ minWidth: `${dayColMinWidth}px` }}
+                         
                         >
                           {visibleOrderedMembers.map((member) => {
                             const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
@@ -669,7 +660,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                 </div>
 
                 {/* Time grid body */}
-                <div className="flex w-max min-w-full" style={{ minHeight: `${gridHeight}px` }}>
+                <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
                   {/* Time labels column (sticky left) */}
                   <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-10 bg-raised">
                     {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
@@ -697,7 +688,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                         className={`flex-1 flex relative ${
                           dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
                         } ${today ? 'bg-today' : ''}`}
-                        style={{ minWidth: `${dayColMinWidth}px` }}
+                       
                       >
                         {/* Current time indicator */}
                         {todayInThisColumn && currentTimePos !== null && (
@@ -793,9 +784,9 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
             {axisMode === 'person' && (
               <>
                 {/* Sticky header */}
-                <div className="sticky top-0 z-20 bg-raised border-b border-edge w-max min-w-full">
+                <div className="sticky top-0 z-20 bg-raised border-b border-edge">
                   {/* Member headers row */}
-                  <div className="flex w-max min-w-full">
+                  <div className="flex">
                     {/* Time column spacer */}
                     <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-30 bg-raised" />
 
@@ -806,7 +797,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                         className={`flex-1 text-center py-2 ${
                           mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                         }`}
-                        style={{ minWidth: `${personColMinWidth}px` }}
+                       
                       >
                         {/* Member name with color bar */}
                         <div
@@ -843,7 +834,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
 
                   {/* All-day events banner */}
                   {hasAnyAllDayEvents && (
-                    <div className="flex w-max min-w-full border-t border-edge" style={{ minHeight: '24px' }}>
+                    <div className="flex border-t border-edge" style={{ minHeight: '24px' }}>
                       {/* Time label */}
                       <div className="w-14 shrink-0 border-r border-edge flex items-center justify-end pr-2 text-[10px] text-ink-faint sticky left-0 z-30 bg-raised">
                         終日
@@ -855,7 +846,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                           className={`flex-1 flex ${
                             mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                           }`}
-                          style={{ minWidth: `${personColMinWidth}px` }}
+                         
                         >
                           {displayDates.map((date) => {
                             const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
@@ -910,7 +901,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                 </div>
 
                 {/* Time grid body */}
-                <div className="flex w-max min-w-full" style={{ minHeight: `${gridHeight}px` }}>
+                <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
                   {/* Time labels column (sticky left) */}
                   <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-10 bg-raised">
                     {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
@@ -933,7 +924,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                       className={`flex-1 flex relative ${
                         mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                       }`}
-                      style={{ minWidth: `${personColMinWidth}px` }}
+                     
                     >
                       {/* Day sub-columns */}
                       {displayDates.map((date, dIdx) => {

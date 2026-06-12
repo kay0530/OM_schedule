@@ -300,14 +300,14 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
         <div ref={scrollRef} className="h-full overflow-auto">
           <div className="flex flex-col">
             {/* Sticky header */}
-            <div className="sticky top-0 z-20 bg-raised border-b border-edge w-max min-w-full">
+            <div className="sticky top-0 z-20 bg-raised border-b border-edge">
               {/* Member headers */}
-              <div className="flex w-max min-w-full">
+              <div className="flex">
                 <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-30 bg-raised" />
                 {visibleOrderedMembers.map((member, mIdx) => (
                   <div
                     key={member.id}
-                    className={`flex-1 min-w-[140px] text-center py-2 ${
+                    className={`flex-1 min-w-0 text-center py-2 ${
                       mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                     }`}
                   >
@@ -323,7 +323,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
 
               {/* All-day events */}
               {hasAnyAllDayEvents && (
-                <div className="flex w-max min-w-full border-t border-edge" style={{ minHeight: '24px' }}>
+                <div className="flex border-t border-edge" style={{ minHeight: '24px' }}>
                   <div className="w-14 shrink-0 border-r border-edge flex items-center justify-end pr-2 text-[10px] text-ink-faint sticky left-0 z-30 bg-raised">
                     終日
                   </div>
@@ -334,7 +334,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                     return (
                       <div
                         key={`allday-${member.id}`}
-                        className={`flex-1 min-w-[140px] overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-surface-hover ${
+                        className={`flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-surface-hover ${
                           mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                         }`}
                         onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(dateStr, '08:00', member.id, { isAllDay: true })}
@@ -383,7 +383,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
             </div>
 
             {/* Time grid body */}
-            <div className="flex w-max min-w-full" style={{ minHeight: `${gridHeight}px` }}>
+            <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
               {/* Time labels */}
               <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-10 bg-raised">
                 {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
@@ -408,7 +408,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                 return (
                   <div
                     key={member.id}
-                    className={`flex-1 min-w-[140px] relative ${
+                    className={`flex-1 min-w-0 relative ${
                       mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                     }`}
                   >
