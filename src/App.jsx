@@ -14,6 +14,7 @@ import EventDetailModal from './components/schedule/EventDetailModal';
 import QuickAddModal from './components/schedule/QuickAddModal';
 import LoginGate from './components/auth/LoginGate';
 import ThemeApplier from './components/shared/ThemeApplier';
+import { SfDataProvider } from './context/SfDataContext';
 
 function AuthenticatedApp() {
   const { isAuthenticated, loading } = useAuth();
@@ -23,8 +24,10 @@ function AuthenticatedApp() {
   return (
     <CalendarProvider>
       <AppProvider>
-        <ThemeApplier />
-        <AppInner />
+        <SfDataProvider>
+          <ThemeApplier />
+          <AppInner />
+        </SfDataProvider>
       </AppProvider>
     </CalendarProvider>
   );

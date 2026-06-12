@@ -4,21 +4,56 @@
  *   1. Opportunities with ConstractType__c = 'レンタル' (rental)
  *   2. Opportunities with RecordType = 'PV'/新規 (self-consumption, 自家消費)
  *   3. Maintenance__c (点検／修繕) records
- * Saves each as JSON for the construction-schedule app.
+ * Uploads each dataset to Firestore (collection `om-schedule-sf-data`) as
+ * chunked documents committed in one atomic batch. The app subscribes to the
+ * collection, so synced data appears without a rebuild or redeploy.
+ *
+ * Customer data is intentionally NOT written to files: this repository is
+ * public, so SF data must never be committed.
+ *
+ * Requires VITE_FIREBASE_* env vars (from .env locally, GitHub Secrets in CI).
  */
 import { execSync } from 'child_process';
-import { writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { initializeApp } from 'firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDocs,
+  writeBatch,
+  serverTimestamp,
+} from 'firebase/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '..', 'src', 'data');
-const OPP_OUTPUT = join(DATA_DIR, 'opportunities.json');
-const SELF_OUTPUT = join(DATA_DIR, 'self-consumption.json');
-const MAINT_OUTPUT = join(DATA_DIR, 'maintenances.json');
-const META_OUTPUT = join(DATA_DIR, 'sync-meta.json');
 
-mkdirSync(DATA_DIR, { recursive: true });
+// ---- Env: load .env for local runs (CI provides real env vars) ----
+function loadDotEnv(path) {
+  if (!existsSync(path)) return;
+  for (const line of readFileSync(path, 'utf-8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m && process.env[m[1]] === undefined) {
+      process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
+    }
+  }
+}
+loadDotEnv(join(__dirname, '..', '.env'));
+
+const firebaseConfig = {
+  apiKey: process.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: process.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: process.env.VITE_FIREBASE_APP_ID || '',
+};
+
+if (!firebaseConfig.projectId) {
+  console.error('[sync-sf] VITE_FIREBASE_* env vars are not set — cannot upload. Aborting.');
+  process.exit(1);
+}
 
 /**
  * Execute a SOQL query via sf CLI and return parsed records.
@@ -90,8 +125,7 @@ const opportunities = oppRecords.map((rec) => ({
   constructionDateConfirmed: rec.KojiSekouKakuteibi__c || false,
 }));
 
-writeFileSync(OPP_OUTPUT, JSON.stringify(opportunities, null, 2), 'utf-8');
-console.log(`[sync-sf] Saved ${opportunities.length} rental opportunities to ${OPP_OUTPUT}`);
+console.log(`[sync-sf] Fetched ${opportunities.length} rental opportunities`);
 
 // Stage breakdown
 const stageCounts = {};
@@ -138,8 +172,7 @@ const selfConsumption = selfRecords.map((rec) => ({
   constructionDateConfirmed: rec.KojiSekouKakuteibi__c || false,
 }));
 
-writeFileSync(SELF_OUTPUT, JSON.stringify(selfConsumption, null, 2), 'utf-8');
-console.log(`[sync-sf] Saved ${selfConsumption.length} self-consumption opportunities to ${SELF_OUTPUT}`);
+console.log(`[sync-sf] Fetched ${selfConsumption.length} self-consumption opportunities`);
 
 // Self-consumption stage breakdown
 const selfStageCounts = {};
@@ -188,8 +221,7 @@ const maintenances = maintRecords.map((rec) => ({
   ownerId: rec.OwnerId || null,
 }));
 
-writeFileSync(MAINT_OUTPUT, JSON.stringify(maintenances, null, 2), 'utf-8');
-console.log(`[sync-sf] Saved ${maintenances.length} maintenance records to ${MAINT_OUTPUT}`);
+console.log(`[sync-sf] Fetched ${maintenances.length} maintenance records`);
 
 // Status breakdown
 const statusCounts = {};
@@ -202,25 +234,63 @@ for (const [status, count] of Object.entries(statusCounts).sort((a, b) => b[1] -
   console.log(`  ${status}: ${count}`);
 }
 
-// Category breakdown
-const catCounts = {};
-for (const m of maintenances) {
-  const cat = m.category || '(none)';
-  catCounts[cat] = (catCounts[cat] || 0) + 1;
-}
-console.log('[sync-sf] Maintenances by category:');
-for (const [cat, count] of Object.entries(catCounts).sort((a, b) => b[1] - a[1])) {
-  console.log(`  ${cat}: ${count}`);
+// ---- Upload to Firestore ----
+// Chunks of 200 records stay far below the 1MB document limit. One batched
+// write keeps meta + all chunks atomic, so app snapshots never see a
+// half-finished sync. Leftover chunk docs from larger past syncs are deleted.
+const COLLECTION_SF_DATA = 'om-schedule-sf-data';
+const CHUNK_SIZE = 200;
+
+async function uploadToFirestore(datasets) {
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const colRef = collection(db, COLLECTION_SF_DATA);
+
+  const batch = writeBatch(db);
+  const expectedIds = new Set(['meta']);
+  const chunkCounts = {};
+
+  for (const [name, records] of Object.entries(datasets)) {
+    const chunks = [];
+    for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+      chunks.push(records.slice(i, i + CHUNK_SIZE));
+    }
+    if (chunks.length === 0) chunks.push([]);
+    chunkCounts[name] = chunks.length;
+    chunks.forEach((chunkRecords, i) => {
+      const id = `${name}-${i}`;
+      expectedIds.add(id);
+      batch.set(doc(colRef, id), { records: chunkRecords });
+    });
+  }
+
+  batch.set(doc(colRef, 'meta'), {
+    syncedAt: new Date().toISOString(),
+    opportunityCount: datasets.opportunities.length,
+    selfConsumptionCount: datasets.selfConsumption.length,
+    maintenanceCount: datasets.maintenances.length,
+    chunks: chunkCounts,
+    updatedAt: serverTimestamp(),
+  });
+
+  const existing = await getDocs(colRef);
+  existing.forEach((d) => {
+    if (!expectedIds.has(d.id)) batch.delete(d.ref);
+  });
+
+  await batch.commit();
+  console.log(`[sync-sf] Uploaded to Firestore (${firebaseConfig.projectId}/${COLLECTION_SF_DATA}):`);
+  for (const [name, count] of Object.entries(chunkCounts)) {
+    console.log(`  ${name}: ${datasets[name].length} records in ${count} chunk(s)`);
+  }
 }
 
-// Write sync metadata
-const syncMeta = {
-  syncedAt: new Date().toISOString(),
-  opportunityCount: opportunities.length,
-  selfConsumptionCount: selfConsumption.length,
-  maintenanceCount: maintenances.length,
-};
-writeFileSync(META_OUTPUT, JSON.stringify(syncMeta, null, 2), 'utf-8');
-console.log(`[sync-sf] Wrote sync metadata to ${META_OUTPUT}`);
+try {
+  await uploadToFirestore({ opportunities, selfConsumption, maintenances });
+} catch (err) {
+  console.error('[sync-sf] Firestore upload failed:', err.message);
+  process.exit(1);
+}
 
 console.log(`\n[sync-sf] Total: ${opportunities.length} rental + ${selfConsumption.length} self-consumption + ${maintenances.length} maintenances`);
+process.exit(0);

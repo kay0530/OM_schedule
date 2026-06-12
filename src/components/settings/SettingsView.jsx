@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { loadAzureConfig, saveAzureConfig, DEFAULT_AZURE_CONFIG } from '../../services/msalService';
 import { getGithubToken, saveGithubToken } from '../../services/githubSyncService';
+import { useSfData } from '../../context/SfDataContext';
 
 /**
  * Generate time options at 30-minute intervals.
@@ -172,14 +173,12 @@ export default function SettingsView() {
     setConfirmReset(false);
   }
 
-  // --- Salesforce sync info ---
-  let sfOpportunities = [];
-  try {
-    sfOpportunities = JSON.parse(localStorage.getItem('construction-schedule-sf-opportunities') || '[]');
-  } catch {
-    // Ignore
-  }
-  const lastSfSync = localStorage.getItem('construction-schedule-sf-last-sync') || null;
+  // --- Salesforce sync info (Firestore meta document) ---
+  const { syncMeta } = useSfData();
+  const lastSfSync = syncMeta?.syncedAt || null;
+  const sfRecordCount = syncMeta
+    ? (syncMeta.opportunityCount || 0) + (syncMeta.selfConsumptionCount || 0) + (syncMeta.maintenanceCount || 0)
+    : null;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 p-4">
@@ -369,9 +368,9 @@ export default function SettingsView() {
               </p>
             </div>
             <div className="bg-canvas rounded-lg p-3">
-              <p className="text-xs text-ink-muted">商談件数</p>
+              <p className="text-xs text-ink-muted">同期件数（商談+点検修繕）</p>
               <p className="text-sm font-medium text-ink mt-0.5">
-                {sfOpportunities.length} 件
+                {sfRecordCount != null ? `${sfRecordCount} 件` : '—'}
               </p>
             </div>
           </div>
@@ -379,7 +378,7 @@ export default function SettingsView() {
           <div className="p-3 bg-indigo-50 dark:bg-indigo-500/15 rounded-lg">
             <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium mb-1">同期方法</p>
             <p className="text-xs text-indigo-600 dark:text-indigo-300">
-              30分ごとに自動同期されます。すぐに同期したい場合は、下のGitHubトークンを設定すると案件一覧パネルの🔄ボタンから手動同期できます。
+              30分ごとに自動同期され、画面には再読み込みなしで即時反映されます。すぐに同期したい場合は、下のGitHubトークンを設定すると案件一覧パネルの🔄ボタンから手動同期できます（約1分で反映）。
             </p>
           </div>
 

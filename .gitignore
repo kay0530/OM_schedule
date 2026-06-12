@@ -3,3 +3,9 @@ dist
 .DS_Store
 *.local
 .env
+
+# Synced Salesforce data lives in Firestore — never commit it (public repo)
+src/data/opportunities.json
+src/data/self-consumption.json
+src/data/maintenances.json
+src/data/sync-meta.json

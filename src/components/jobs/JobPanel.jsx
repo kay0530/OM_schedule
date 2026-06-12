@@ -1,23 +1,17 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import opportunities from '../../data/opportunities.json';
-import selfConsumption from '../../data/self-consumption.json';
-import maintenances from '../../data/maintenances.json';
-import syncMeta from '../../data/sync-meta.json';
 import JobCard, { STAGE_COLORS, MAINT_STATUS_COLORS } from './JobCard';
 import { isFirestoreEnabled, saveFilterPresets, loadFilterPresets, subscribeFilterPresets } from '../../services/firestoreService';
 import { getGithubToken, triggerSfSync } from '../../services/githubSyncService';
+import { useSfData } from '../../context/SfDataContext';
 
 /**
  * Sidebar panel listing Salesforce records.
  * Three tabs: レンタル商談 (opportunities), 自家消費 (self-consumption),
  * and 点検／修繕 (maintenance).
+ * Data arrives asynchronously via SfDataContext (Firestore subscription).
  * Supports text search, stage/status filtering, collapsing,
  * and saving/loading filter presets via localStorage.
  */
-
-const ALL_STAGES = [...new Set(opportunities.map((o) => o.stage))].filter(Boolean).sort();
-const ALL_SELF_STAGES = [...new Set(selfConsumption.map((o) => o.stage))].filter(Boolean).sort();
-const ALL_MAINT_STATUSES = [...new Set(maintenances.map((m) => m.status))].filter(Boolean).sort();
 
 // Tri-state filter chip: null (all) → true (confirmed only) → false (unconfirmed only) → null
 function TriStateChip({ label, value, onChange }) {
@@ -71,14 +65,30 @@ function saveLastFilter(filter) {
   localStorage.setItem(LAST_FILTER_STORAGE_KEY, JSON.stringify(filter));
 }
 
-const TABS = [
-  { id: 'opportunity', label: 'レンタル商談', count: opportunities.length },
-  { id: 'self-consumption', label: '自家消費', count: selfConsumption.length },
-  { id: 'maintenance', label: '点検／修繕', count: maintenances.length },
-];
-
 export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle }) {
   const collapsed = !isOpen;
+
+  // SF data streamed from Firestore (empty arrays until the first snapshot)
+  const { opportunities, selfConsumption, maintenances, syncMeta, loading: sfLoading } = useSfData();
+
+  const ALL_STAGES = useMemo(
+    () => [...new Set(opportunities.map((o) => o.stage))].filter(Boolean).sort(),
+    [opportunities]
+  );
+  const ALL_SELF_STAGES = useMemo(
+    () => [...new Set(selfConsumption.map((o) => o.stage))].filter(Boolean).sort(),
+    [selfConsumption]
+  );
+  const ALL_MAINT_STATUSES = useMemo(
+    () => [...new Set(maintenances.map((m) => m.status))].filter(Boolean).sort(),
+    [maintenances]
+  );
+
+  const TABS = [
+    { id: 'opportunity', label: 'レンタル商談', count: opportunities.length },
+    { id: 'self-consumption', label: '自家消費', count: selfConsumption.length },
+    { id: 'maintenance', label: '点検／修繕', count: maintenances.length },
+  ];
 
   // Manual SF sync (GitHub Actions workflow_dispatch)
   const [sfSyncing, setSfSyncing] = useState(false);
@@ -93,14 +103,9 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
     }
     setSfSyncing(true);
     try {
-      const result = await triggerSfSync(token, setSfSyncStatus);
-      if (result.deployed) {
-        if (confirm('Salesforce同期が完了しました。\nページを再読み込みして最新データを表示しますか？')) {
-          window.location.reload();
-        }
-      } else {
-        alert('Salesforce同期が完了しました。データに変更はありませんでした。');
-      }
+      await triggerSfSync(token, setSfSyncStatus);
+      // Fresh data arrives via the Firestore subscription — no reload needed
+      alert('Salesforce同期が完了しました。最新データが反映されています。');
     } catch (err) {
       alert(`Salesforce同期エラー: ${err.message}`);
     } finally {
@@ -142,6 +147,24 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
   const [presetName, setPresetName] = useState('');
   const fromFirestoreRef = useRef(false);
 
+  // SF data loads asynchronously: once the first snapshot arrives, select all
+  // stages/statuses for tabs that have no saved filter. Until then the
+  // auto-save effect below must not run, or it would persist empty filters.
+  const defaultsAppliedRef = useRef(false);
+  useEffect(() => {
+    if (sfLoading || defaultsAppliedRef.current) return;
+    defaultsAppliedRef.current = true;
+    if (!(lastFilter?.tab === 'opportunity' && lastFilter?.filters)) {
+      setActiveStages(new Set(ALL_STAGES));
+    }
+    if (!(lastFilter?.tab === 'self-consumption' && lastFilter?.filters)) {
+      setActiveSelfStages(new Set(ALL_SELF_STAGES));
+    }
+    if (!(lastFilter?.tab === 'maintenance' && lastFilter?.filters)) {
+      setActiveStatuses(new Set(ALL_MAINT_STATUSES));
+    }
+  }, [sfLoading, ALL_STAGES, ALL_SELF_STAGES, ALL_MAINT_STATUSES, lastFilter]);
+
   // Load from Firestore on mount and subscribe to real-time updates
   useEffect(() => {
     if (!isFirestoreEnabled()) return;
@@ -175,7 +198,9 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
   }, [presets]);
 
   // Auto-save last used filter whenever tab or filters change
+  // (skipped until SF data has loaded and defaults were applied)
   useEffect(() => {
+    if (!defaultsAppliedRef.current) return;
     let filters;
     if (activeTab === 'opportunity') filters = [...activeStages];
     else if (activeTab === 'self-consumption') filters = [...activeSelfStages];
@@ -244,7 +269,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
       }
       return true;
     });
-  }, [searchText, activeStages, surveyConfirmedFilter, constructionConfirmedFilter]);
+  }, [opportunities, searchText, activeStages, surveyConfirmedFilter, constructionConfirmedFilter]);
 
   // Filtered self-consumption opportunities
   const filteredSelf = useMemo(() => {
@@ -259,7 +284,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
       }
       return true;
     });
-  }, [searchText, activeSelfStages, surveyConfirmedFilter, constructionConfirmedFilter]);
+  }, [selfConsumption, searchText, activeSelfStages, surveyConfirmedFilter, constructionConfirmedFilter]);
 
   // Filtered maintenances
   const filteredMaints = useMemo(() => {
@@ -273,7 +298,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
       }
       return true;
     });
-  }, [searchText, activeStatuses]);
+  }, [maintenances, searchText, activeStatuses]);
 
   const currentItems = activeTab === 'opportunity' ? filteredOpps
     : activeTab === 'self-consumption' ? filteredSelf
@@ -522,7 +547,15 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
 
       {/* Scrollable list */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4">
-        {grouped.length === 0 ? (
+        {sfLoading ? (
+          <p className="text-sm text-ink-faint text-center py-8 flex items-center justify-center gap-2">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            データ読み込み中...
+          </p>
+        ) : grouped.length === 0 ? (
           <p className="text-sm text-ink-faint text-center py-8">
             該当する案件がありません
           </p>

@@ -1,10 +1,10 @@
 /**
  * Manual Salesforce sync trigger via GitHub Actions.
  *
- * The SF data is baked into the bundle by the "Sync Salesforce Data"
- * workflow (every 30 min). This service lets a user with a GitHub token
- * trigger that workflow on demand and watch it (plus the follow-up Pages
- * deploy) to completion.
+ * The "Sync Salesforce Data" workflow (every 30 min) writes SF data to
+ * Firestore. This service lets a user with a GitHub token trigger that
+ * workflow on demand and watch it to completion — the app then receives
+ * the fresh data through its Firestore subscription, no redeploy needed.
  *
  * The token is stored per-device in localStorage — NEVER ship a token in
  * the bundle: GitHub Pages is publicly reachable.
@@ -13,7 +13,6 @@
 const OWNER = 'kay0530';
 const REPO = 'OM_schedule';
 const SYNC_WORKFLOW = 'sync-sf.yml';
-const DEPLOY_WORKFLOW = 'deploy.yml';
 const TOKEN_KEY = 'construction-schedule-github-token';
 
 export function getGithubToken() {
@@ -56,10 +55,11 @@ async function listRuns(token, workflow, createdAfterIso) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Trigger the SF sync workflow and follow it through to deployment.
+ * Trigger the SF sync workflow and wait for it to complete.
+ * Fresh data arrives via the Firestore subscription as soon as the
+ * workflow's batched write commits.
  * @param {string} token - GitHub token (actions:write on the repo)
  * @param {(message: string) => void} onStatus - progress callback
- * @returns {Promise<{ deployed: boolean }>} deployed=false means no data change
  */
 export async function triggerSfSync(token, onStatus = () => {}) {
   const startedAt = new Date(Date.now() - 5000).toISOString();
@@ -94,32 +94,4 @@ export async function triggerSfSync(token, onStatus = () => {}) {
   if (syncRun.conclusion !== 'success') {
     throw new Error(`同期ワークフローが失敗しました (${syncRun.conclusion})`);
   }
-
-  // If data changed, the sync run pushes a commit which triggers the deploy
-  // workflow. Give it a moment to appear; absence = no data change.
-  onStatus('デプロイ確認中...');
-  const syncFinishedAt = syncRun.updated_at;
-  let deployRun = null;
-  for (let i = 0; i < 5; i++) {
-    await sleep(6000);
-    const runs = await listRuns(token, DEPLOY_WORKFLOW, syncFinishedAt);
-    deployRun = runs[0] || null;
-    if (deployRun) break;
-  }
-  if (!deployRun) {
-    return { deployed: false }; // SF data unchanged
-  }
-
-  onStatus('サイトを再デプロイ中...');
-  while (Date.now() < deadline) {
-    await sleep(8000);
-    const runs = await listRuns(token, DEPLOY_WORKFLOW, syncFinishedAt);
-    deployRun = runs[0] || null;
-    if (deployRun && deployRun.status === 'completed') break;
-  }
-  if (!deployRun || deployRun.conclusion !== 'success') {
-    throw new Error('デプロイの完了を確認できませんでした（数分後にリロードしてみてください）');
-  }
-
-  return { deployed: true };
 }
