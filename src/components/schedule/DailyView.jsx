@@ -9,9 +9,11 @@ import {
 } from '../../utils/dateUtils';
 import { STATUS_KEYWORDS } from '../../data/statusTypes';
 import { layoutEvents } from '../../utils/eventLayout';
+import { getContrastText } from '../../utils/colorUtils';
 import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
 import AllDayOverlay from './AllDayOverlay';
+import FilterPopover from '../shared/FilterPopover';
 
 const HOUR_HEIGHT = 60;
 const START_HOUR = 0;
@@ -35,16 +37,16 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
   const scrollRef = useRef(null);
   const hasAutoScrolled = useRef(false);
 
-  // Member filter
-  const [visibleMembers, setVisibleMembers] = useState(() => new Set(MEMBER_ORDER));
+  // Member filter — shared & persisted via settings (hidden-list form)
+  const hiddenMemberIds = settings.hiddenMemberIds ?? [];
 
   const orderedMembers = useMemo(() => {
     return MEMBER_ORDER.map((id) => MEMBERS.find((m) => m.id === id)).filter(Boolean);
   }, []);
 
   const visibleOrderedMembers = useMemo(() => {
-    return orderedMembers.filter((m) => visibleMembers.has(m.id));
-  }, [orderedMembers, visibleMembers]);
+    return orderedMembers.filter((m) => !hiddenMemberIds.includes(m.id));
+  }, [orderedMembers, hiddenMemberIds]);
 
   const dateStr = useMemo(() => toISODate(currentDate), [currentDate]);
   const isToday = useMemo(() => toISODate(new Date()) === dateStr, [dateStr]);
@@ -62,17 +64,17 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
   }, []);
 
   function toggleMember(memberId) {
-    setVisibleMembers((prev) => {
-      const next = new Set(prev);
-      if (next.has(memberId)) next.delete(memberId);
-      else next.add(memberId);
-      return next;
-    });
+    const next = hiddenMemberIds.includes(memberId)
+      ? hiddenMemberIds.filter((x) => x !== memberId)
+      : [...hiddenMemberIds, memberId];
+    dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: next } });
   }
 
   function toggleAllMembers() {
-    if (visibleMembers.size === MEMBERS.length) setVisibleMembers(new Set());
-    else setVisibleMembers(new Set(MEMBER_ORDER));
+    dispatch({
+      type: 'UPDATE_SETTINGS',
+      payload: { hiddenMemberIds: hiddenMemberIds.length === 0 ? [...MEMBER_ORDER] : [] },
+    });
   }
 
   // IDs of Outlook events already represented by an assignment (dedupe)
@@ -249,111 +251,69 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
 
   const gridHeight = TOTAL_HOURS * HOUR_HEIGHT;
 
+  // Business-hours shading bands (Outlook-style); weekends shade full column
+  const workStartMin = timeStringToMinutes(settings.workingHours?.start || '08:00');
+  const workEndMin = timeStringToMinutes(settings.workingHours?.end || '18:00');
+  const offTopH = (workStartMin / 60) * HOUR_HEIGHT;
+  const offBottomTop = (workEndMin / 60) * HOUR_HEIGHT;
+  const isWeekendDay = currentDate.getDay() === 0 || currentDate.getDay() === 6;
+
+  const renderOffHours = (weekend) =>
+    weekend ? (
+      <div className="absolute inset-0 bg-offhours pointer-events-none" />
+    ) : (
+      <>
+        <div className="absolute inset-x-0 top-0 bg-offhours pointer-events-none" style={{ height: `${offTopH}px` }} />
+        <div className="absolute inset-x-0 bg-offhours pointer-events-none" style={{ top: `${offBottomTop}px`, bottom: 0 }} />
+      </>
+    );
+
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => onDateChange(new Date())}
-              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              今日
-            </button>
-            <button
-              onClick={() => {
-                const d = new Date(currentDate);
-                d.setDate(d.getDate() - 1);
-                onDateChange(d);
-              }}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-              title="前日"
-            >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <button
-              onClick={() => {
-                const d = new Date(currentDate);
-                d.setDate(d.getDate() + 1);
-                onDateChange(d);
-              }}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-              title="翌日"
-            >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
-          <h2 className={`text-lg font-bold ${isToday ? 'text-blue-600' : 'text-gray-800'}`}>{dayLabel}</h2>
-          {loading && (
-            <span className="text-xs text-blue-400 flex items-center gap-1">
-              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              読込中...
-            </span>
-          )}
-        </div>
-      </div>
+      {/* One-row toolbar: label + member filter */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <h2 className={`text-sm font-semibold mr-1 ${isToday ? 'text-accent' : 'text-ink'}`}>{dayLabel}</h2>
 
-      {/* Member filter chips */}
-      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        <button
-          onClick={toggleAllMembers}
-          className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 transition-colors"
-        >
-          {visibleMembers.size === MEMBERS.length ? '全解除' : '全選択'}
-        </button>
-        {orderedMembers.map((member) => (
-          <label key={member.id} className="inline-flex items-center gap-1 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={visibleMembers.has(member.id)}
-              onChange={() => toggleMember(member.id)}
-              className="sr-only"
-            />
-            <span
-              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
-                visibleMembers.has(member.id)
-                  ? 'border-transparent text-white'
-                  : 'border-gray-300 text-gray-400 bg-white'
-              }`}
-              style={visibleMembers.has(member.id) ? { backgroundColor: member.color } : {}}
-            >
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: visibleMembers.has(member.id) ? 'white' : member.color }}
-              />
-              {member.nameJa}
-            </span>
-          </label>
-        ))}
+        <FilterPopover
+          label="メンバー"
+          items={orderedMembers.map((m) => ({
+            id: m.id,
+            label: m.nameJa,
+            color: m.color,
+            checked: !hiddenMemberIds.includes(m.id),
+          }))}
+          onToggle={toggleMember}
+          onToggleAll={toggleAllMembers}
+          allChecked={hiddenMemberIds.length === 0}
+        />
+
+        {loading && (
+          <svg className="w-3.5 h-3.5 animate-spin text-accent" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        )}
       </div>
 
       {/* Calendar grid */}
-      <div className="bg-white rounded-xl overflow-hidden border border-gray-200 flex-1 min-h-0 shadow-sm">
+      <div className="bg-surface rounded-xl overflow-hidden border border-edge flex-1 min-h-0 shadow-sm">
         <div ref={scrollRef} className="h-full overflow-auto">
           <div className="flex flex-col">
             {/* Sticky header */}
-            <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+            <div className="sticky top-0 z-20 bg-raised border-b border-edge w-max min-w-full">
               {/* Member headers */}
-              <div className="flex">
-                <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-30 bg-white" />
+              <div className="flex w-max min-w-full">
+                <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-30 bg-raised" />
                 {visibleOrderedMembers.map((member, mIdx) => (
                   <div
                     key={member.id}
-                    className={`flex-1 min-w-[80px] text-center py-2 ${
-                      mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
+                    className={`flex-1 min-w-[140px] text-center py-2 ${
+                      mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                     }`}
                   >
                     <div
-                      className="text-xs font-bold text-white rounded-sm mx-1 py-1"
-                      style={{ backgroundColor: member.color }}
+                      className="text-xs font-bold rounded-sm mx-1 py-1"
+                      style={{ backgroundColor: member.color, color: getContrastText(member.color) }}
                     >
                       {member.nameJa}
                     </div>
@@ -363,8 +323,8 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
 
               {/* All-day events */}
               {hasAnyAllDayEvents && (
-                <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
-                  <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-gray-400 sticky left-0 z-30 bg-white">
+                <div className="flex w-max min-w-full border-t border-edge" style={{ minHeight: '24px' }}>
+                  <div className="w-14 shrink-0 border-r border-edge flex items-center justify-end pr-2 text-[10px] text-ink-faint sticky left-0 z-30 bg-raised">
                     終日
                   </div>
                   {visibleOrderedMembers.map((member, mIdx) => {
@@ -374,23 +334,18 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                     return (
                       <div
                         key={`allday-${member.id}`}
-                        className={`flex-1 min-w-[80px] overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-gray-50 ${
-                          mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
+                        className={`flex-1 min-w-[140px] overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-surface-hover ${
+                          mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                         }`}
                         onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(dateStr, '08:00', member.id, { isAllDay: true })}
                       >
                         {allDayEvts.map((evt) => (
                           <div
                             key={evt.id}
-                            className="text-[10px] font-medium leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer"
-                            style={useOutlookColor ? {
-                              backgroundColor: member.color,
-                              color: 'white',
-                            } : {
-                              backgroundColor: '#E5E7EB',
-                              color: '#374151',
-                              borderLeft: '3px solid #9CA3AF',
-                            }}
+                            className={`text-[10px] font-semibold leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer ${
+                              useOutlookColor ? 'event-solid' : 'event-neutral'
+                            }`}
+                            style={useOutlookColor ? { '--mc': member.color, '--on-mc': getContrastText(member.color) } : {}}
                             title={evt.title}
                             onClick={(e) => { e.stopPropagation(); onEventClick(evt); }}
                             onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(evt); }}
@@ -403,20 +358,16 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                           return (
                             <div
                               key={a.id}
-                              className="text-[10px] font-medium leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer flex items-center gap-1"
-                              style={{
-                                backgroundColor: member.color,
-                                color: 'white',
-                                borderLeft: synced ? undefined : `3px dashed ${member.color}`,
-                                backgroundImage: synced ? undefined
-                                  : `repeating-linear-gradient(135deg, ${member.color}, ${member.color} 4px, ${member.color}cc 4px, ${member.color}cc 8px)`,
-                              }}
+                              className={`text-[10px] font-semibold leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer flex items-center gap-1 ${
+                                synced ? 'event-solid' : 'event-tint'
+                              }`}
+                              style={{ '--mc': member.color, '--on-mc': getContrastText(member.color) }}
                               title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
                               onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
                               onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
                             >
                               <span className={`text-[8px] leading-none px-1 py-px rounded font-bold ${
-                                synced ? 'bg-white/30 text-white' : 'bg-amber-300 text-amber-900'
+                                synced ? 'bg-emerald-600 text-white' : 'bg-amber-300 text-amber-900'
                               }`}>
                                 {synced ? '✓' : '仮'}
                               </span>
@@ -432,20 +383,17 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
             </div>
 
             {/* Time grid body */}
-            <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
+            <div className="flex w-max min-w-full" style={{ minHeight: `${gridHeight}px` }}>
               {/* Time labels */}
-              <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-10 bg-white">
+              <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-10 bg-raised">
                 {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
                   <div
                     key={hour}
-                    className="border-b border-gray-100 text-right pr-2 text-[11px] text-gray-400 relative"
+                    className="border-b border-grid text-right pr-2 text-[11px] text-ink-faint relative"
                     style={{ height: `${HOUR_HEIGHT}px` }}
                   >
                     <span className="absolute -top-2 right-2">
                       {String(hour).padStart(2, '0')}:00
-                    </span>
-                    <span className="absolute right-2 text-[10px] text-gray-300" style={{ top: `${HOUR_HEIGHT / 2 - 6}px` }}>
-                      {String(hour).padStart(2, '0')}:30
                     </span>
                   </div>
                 ))}
@@ -460,10 +408,13 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                 return (
                   <div
                     key={member.id}
-                    className={`flex-1 min-w-[80px] relative ${
-                      mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
+                    className={`flex-1 min-w-[140px] relative ${
+                      mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                     }`}
                   >
+                    {/* Off-hours / weekend shading */}
+                    {renderOffHours(isWeekendDay)}
+
                     {/* Current time indicator */}
                     {isToday && currentTimePos !== null && (
                       <div
@@ -471,8 +422,8 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                         style={{ top: `${currentTimePos}px` }}
                       >
                         <div className="relative">
-                          <div className="absolute left-0 w-2 h-2 rounded-full bg-red-500 -translate-y-1/2" />
-                          <div className="absolute left-0 right-0 h-px bg-red-500" />
+                          <div className="absolute left-0 w-2 h-2 rounded-full bg-now -translate-y-1/2" />
+                          <div className="absolute left-0 right-0 h-[2px] bg-now" />
                         </div>
                       </div>
                     )}
@@ -484,8 +435,8 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                       return (
                         <div
                           key={hour}
-                          className={`border-b border-gray-100 relative transition-colors ${
-                            isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
+                          className={`border-b border-grid relative transition-colors ${
+                            isDragOver ? 'bg-drop ring-1 ring-inset ring-accent' : ''
                           }`}
                           style={{ height: `${HOUR_HEIGHT}px` }}
                           onClick={() => handleSlotSingleClick(hour, 0, member.id)}
@@ -495,7 +446,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                           onDrop={(e) => handleDrop(e, hour, member.id)}
                         >
                           <div
-                            className="absolute left-0 right-0 border-b border-gray-50"
+                            className="absolute left-0 right-0 border-b border-grid-faint"
                             style={{ top: `${HOUR_HEIGHT / 2}px` }}
                           />
                         </div>

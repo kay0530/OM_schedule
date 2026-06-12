@@ -8,6 +8,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      /* FOUC guard: apply theme before React mounts (MSAL+Firestore init delays
+         first paint). Storage key must match STORAGE_KEYS.settings in
+         src/context/AppContext.jsx. */
+      try {
+        var s = JSON.parse(localStorage.getItem('construction-schedule-settings') || '{}');
+        var dark = s.theme === 'dark' || (s.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      } catch (e) {}
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

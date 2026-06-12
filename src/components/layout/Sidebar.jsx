@@ -51,7 +51,7 @@ export default function Sidebar({ activeView, onNavigate, isOpen, collapsed, onC
       )}
 
       <aside
-        className={`fixed top-14 left-0 bottom-0 bg-white border-r border-gray-200 z-40 transform transition-all duration-200 ${
+        className={`fixed top-14 left-0 bottom-0 bg-raised border-r border-edge z-40 transform transition-all duration-200 ${
           collapsed ? 'w-14' : 'w-60'
         } ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
       >
@@ -68,11 +68,11 @@ export default function Sidebar({ activeView, onNavigate, isOpen, collapsed, onC
                 collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5'
               } ${
                 activeView === item.key
-                  ? 'bg-orange-50 text-orange-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
+                  : 'text-ink-muted hover:bg-surface-hover hover:text-ink'
               }`}
             >
-              <span className={activeView === item.key ? 'text-orange-600' : 'text-gray-400'}>
+              <span className={activeView === item.key ? 'text-orange-600 dark:text-orange-400' : 'text-ink-faint'}>
                 {item.icon}
               </span>
               {!collapsed && item.label}
@@ -83,7 +83,7 @@ export default function Sidebar({ activeView, onNavigate, isOpen, collapsed, onC
         {/* Collapse toggle button (desktop only) */}
         <button
           onClick={onToggleCollapse}
-          className="hidden lg:flex absolute bottom-4 left-0 right-0 justify-center p-2 text-gray-400 hover:text-gray-600 transition-colors"
+          className="hidden lg:flex absolute bottom-4 left-0 right-0 justify-center p-2 text-ink-faint hover:text-ink-muted transition-colors"
           title={collapsed ? 'サイドバーを展開' : 'サイドバーを折り畳む'}
         >
           <svg className={`w-4 h-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">

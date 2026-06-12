@@ -12,9 +12,16 @@ import {
 import { STATUS_KEYWORDS } from '../../data/statusTypes';
 import { WORK_CATEGORIES, WORK_CATEGORY_IDS, getAssignmentCategoryId } from '../../data/workCategories';
 import { layoutEvents } from '../../utils/eventLayout';
+import { getContrastText } from '../../utils/colorUtils';
 import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
 import AllDayOverlay from './AllDayOverlay';
+import FilterPopover from '../shared/FilterPopover';
+
+// Minimum sub-column widths (px) so columns never collapse into unreadable
+// slivers — the grid scrolls horizontally instead (P1-9)
+const PERSON_SUBCOL_MIN_W = 88;
+const DAY_SUBCOL_MIN_W = 76;
 
 // Time grid constants
 const HOUR_HEIGHT = 60; // pixels per hour
@@ -62,74 +69,44 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
   const scrollRef = useRef(null);
   const hasAutoScrolled = useRef(false);
 
-  // Axis mode: 'date' (default) or 'person'
-  const [axisMode, setAxisMode] = useState(() => {
-    try {
-      return localStorage.getItem('construction-schedule-view-axis') || 'date';
-    } catch {
-      return 'date';
-    }
-  });
-
+  // ===== Shared, persisted view state (settings — see AppContext) =====
+  const axisMode = settings.viewAxis === 'person' ? 'person' : 'date';
   function handleAxisChange(mode) {
-    setAxisMode(mode);
-    try {
-      localStorage.setItem('construction-schedule-view-axis', mode);
-    } catch {
-      // localStorage unavailable
-    }
+    dispatch({ type: 'UPDATE_SETTINGS', payload: { viewAxis: mode } });
   }
 
-  // Member filter state
-  const [visibleMembers, setVisibleMembers] = useState(
-    () => new Set(MEMBER_ORDER)
-  );
-
-  // Work category filter state (id set; null included = no/unknown category)
-  const [visibleCategories, setVisibleCategories] = useState(() => {
-    try {
-      const raw = localStorage.getItem('construction-schedule-visible-categories');
-      if (raw) return new Set(JSON.parse(raw));
-    } catch {
-      // ignore
-    }
-    return new Set([...WORK_CATEGORY_IDS, '__none__']);
-  });
-
-  function toggleCategory(id) {
-    setVisibleCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      try {
-        localStorage.setItem(
-          'construction-schedule-visible-categories',
-          JSON.stringify([...next])
-        );
-      } catch {
-        // ignore
-      }
-      return next;
+  const hiddenMemberIds = settings.hiddenMemberIds ?? [];
+  function toggleMemberFilter(id) {
+    const next = hiddenMemberIds.includes(id)
+      ? hiddenMemberIds.filter((x) => x !== id)
+      : [...hiddenMemberIds, id];
+    dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: next } });
+  }
+  function toggleAllMemberFilter() {
+    dispatch({
+      type: 'UPDATE_SETTINGS',
+      payload: { hiddenMemberIds: hiddenMemberIds.length === 0 ? [...MEMBER_ORDER] : [] },
     });
   }
 
+  const ALL_CATEGORY_IDS = useMemo(() => [...WORK_CATEGORY_IDS, '__none__'], []);
+  const hiddenCategoryIds = settings.hiddenCategoryIds ?? [];
+  function toggleCategory(id) {
+    const next = hiddenCategoryIds.includes(id)
+      ? hiddenCategoryIds.filter((x) => x !== id)
+      : [...hiddenCategoryIds, id];
+    dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenCategoryIds: next } });
+  }
   function toggleAllCategories() {
-    const all = [...WORK_CATEGORY_IDS, '__none__'];
-    const next = visibleCategories.size === all.length ? new Set() : new Set(all);
-    setVisibleCategories(next);
-    try {
-      localStorage.setItem(
-        'construction-schedule-visible-categories',
-        JSON.stringify([...next])
-      );
-    } catch {
-      // ignore
-    }
+    dispatch({
+      type: 'UPDATE_SETTINGS',
+      payload: { hiddenCategoryIds: hiddenCategoryIds.length === 0 ? [...ALL_CATEGORY_IDS] : [] },
+    });
   }
 
   function isAssignmentVisibleByCategory(a) {
     const cat = getAssignmentCategoryId(a) || '__none__';
-    return visibleCategories.has(cat);
+    return !hiddenCategoryIds.includes(cat);
   }
 
   // Ordered members list
@@ -139,10 +116,10 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       .filter(Boolean);
   }, []);
 
-  // Filtered visible members
+  // Filtered visible members (hidden-list form so new members default visible)
   const visibleOrderedMembers = useMemo(() => {
-    return orderedMembers.filter((m) => visibleMembers.has(m.id));
-  }, [orderedMembers, visibleMembers]);
+    return orderedMembers.filter((m) => !hiddenMemberIds.includes(m.id));
+  }, [orderedMembers, hiddenMemberIds]);
 
   // Week dates (Monday start)
   const weekDates = useMemo(() => getWeekDates(currentDate), [currentDate]);
@@ -162,28 +139,6 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       hasAutoScrolled.current = true;
     }
   }, []);
-
-  // Toggle member visibility
-  function toggleMember(memberId) {
-    setVisibleMembers((prev) => {
-      const next = new Set(prev);
-      if (next.has(memberId)) {
-        next.delete(memberId);
-      } else {
-        next.add(memberId);
-      }
-      return next;
-    });
-  }
-
-  // Select/deselect all members
-  function toggleAllMembers() {
-    if (visibleMembers.size === MEMBERS.length) {
-      setVisibleMembers(new Set());
-    } else {
-      setVisibleMembers(new Set(MEMBER_ORDER));
-    }
-  }
 
   // Check if date is today
   function isToday(date) {
@@ -251,7 +206,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
           isAssignmentVisibleByCategory(a)
       );
     },
-    [assignments, visibleCategories]
+    [assignments, hiddenCategoryIds]
   );
 
   // Get assignments for a member + date (from AppContext), excluding deliveries
@@ -268,7 +223,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
           isAssignmentVisibleByCategory(a)
       );
     },
-    [assignments, visibleCategories]
+    [assignments, hiddenCategoryIds]
   );
 
   // Build combined all-day items (Outlook + assignment) for the full-day
@@ -315,7 +270,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
           isAssignmentVisibleByCategory(a)
       );
     },
-    [assignments, visibleCategories]
+    [assignments, hiddenCategoryIds]
   );
 
   // Check if any all-day events (Outlook OR assignment) exist in visible data
@@ -460,183 +415,127 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
   // Total grid height
   const gridHeight = TOTAL_HOURS * HOUR_HEIGHT;
 
+  // Business-hours shading bands (P1-5): everything outside workingHours is
+  // dimmed, Outlook-style. Weekends shade the full column.
+  const workStartMin = timeStringToMinutes(settings.workingHours?.start || '08:00');
+  const workEndMin = timeStringToMinutes(settings.workingHours?.end || '18:00');
+  const offTopH = (workStartMin / 60) * HOUR_HEIGHT;
+  const offBottomTop = (workEndMin / 60) * HOUR_HEIGHT;
+
+  // Off-hours shading bands rendered before the hour cells (so cell dragOver
+  // backgrounds paint above them in DOM order; both are positioned)
+  const renderOffHours = (isWeekend) =>
+    isWeekend ? (
+      <div className="absolute inset-0 bg-offhours pointer-events-none" />
+    ) : (
+      <>
+        <div className="absolute inset-x-0 top-0 bg-offhours pointer-events-none" style={{ height: `${offTopH}px` }} />
+        <div className="absolute inset-x-0 bg-offhours pointer-events-none" style={{ top: `${offBottomTop}px`, bottom: 0 }} />
+      </>
+    );
+
+  // Width helpers (P1-9): keep header / all-day / body column widths in sync
+  const dayColMinWidth = Math.max(visibleOrderedMembers.length * DAY_SUBCOL_MIN_W, 120);
+  const personColMinWidth = displayDates.length * PERSON_SUBCOL_MIN_W;
+
+  // All-day chip class helper (P1-4): solid for synced/Outlook, tint for drafts
+  const alldayChipClass = (solid) => (solid ? 'event-solid' : 'event-tint');
+
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
-      {/* Header: navigation + week label */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-4">
-          {/* Week navigation */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => onDateChange(new Date())}
-              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              今日
-            </button>
-            <button
-              onClick={() => {
-                const d = new Date(currentDate);
-                d.setDate(d.getDate() - 7);
-                onDateChange(d);
-              }}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-              title="前の週"
-            >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <button
-              onClick={() => {
-                const d = new Date(currentDate);
-                d.setDate(d.getDate() + 7);
-                onDateChange(d);
-              }}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-              title="次の週"
-            >
-              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
+      {/* One-row toolbar: label + axis toggle + filters + display options */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <h2 className="text-sm font-semibold text-ink mr-1">{weekLabel}</h2>
 
-          <h2 className="text-lg font-bold text-gray-800">{weekLabel}</h2>
-
-          {loading && (
-            <span className="text-xs text-blue-400 flex items-center gap-1">
-              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              読込中...
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Axis toggle + Member filter chips */}
-      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        {/* Axis mode toggle */}
-        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden mr-2">
+        {/* Axis mode segmented control (Outlook-style pill) */}
+        <div className="inline-flex bg-canvas rounded-lg p-0.5">
           <button
             onClick={() => handleAxisChange('date')}
-            className={`text-xs px-3 py-1 font-medium transition-colors ${
+            className={`text-xs px-3 py-1 font-medium rounded-md transition-colors ${
               axisMode === 'date'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
+                ? 'bg-surface text-ink shadow-sm dark:bg-surface-hover'
+                : 'text-ink-muted hover:text-ink'
             }`}
           >
             日付軸
           </button>
           <button
             onClick={() => handleAxisChange('person')}
-            className={`text-xs px-3 py-1 font-medium transition-colors ${
+            className={`text-xs px-3 py-1 font-medium rounded-md transition-colors ${
               axisMode === 'person'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
+                ? 'bg-surface text-ink shadow-sm dark:bg-surface-hover'
+                : 'text-ink-muted hover:text-ink'
             }`}
           >
             人軸
           </button>
         </div>
 
-        {/* Outlook event color toggle */}
+        {/* Category filter popover */}
+        <FilterPopover
+          label="作業種別"
+          items={[
+            ...WORK_CATEGORIES.map((c) => ({
+              id: c.id,
+              label: c.label,
+              color: c.color,
+              checked: !hiddenCategoryIds.includes(c.id),
+            })),
+            { id: '__none__', label: '未分類', checked: !hiddenCategoryIds.includes('__none__') },
+          ]}
+          onToggle={toggleCategory}
+          onToggleAll={toggleAllCategories}
+          allChecked={hiddenCategoryIds.length === 0}
+        />
+
+        {/* Member filter popover */}
+        <FilterPopover
+          label="メンバー"
+          items={orderedMembers.map((m) => ({
+            id: m.id,
+            label: m.nameJa,
+            color: m.color,
+            checked: !hiddenMemberIds.includes(m.id),
+          }))}
+          onToggle={toggleMemberFilter}
+          onToggleAll={toggleAllMemberFilter}
+          allChecked={hiddenMemberIds.length === 0}
+        />
+
+        {/* Display options */}
         <button
           onClick={toggleColorOutlook}
-          className={`text-xs px-3 py-1 font-medium rounded-lg border transition-colors ${
+          className={`text-xs px-2.5 py-1 font-medium rounded-lg border transition-colors ${
             colorOutlookEvents
-              ? 'bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100'
-              : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+              ? 'bg-accent-soft text-accent border-accent/40'
+              : 'bg-surface text-ink-muted border-edge hover:bg-surface-hover'
           }`}
           title="Outlook予定の色表示を切替"
         >
-          {colorOutlookEvents ? '🎨 Outlook色付き' : '⚪ Outlook無色'}
+          {colorOutlookEvents ? 'Outlook色付き' : 'Outlook無色'}
         </button>
-      </div>
-
-      {/* Work category filter chips */}
-      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-        <span className="text-[10px] text-gray-500 mr-1">作業種別:</span>
         <button
-          onClick={toggleAllCategories}
-          className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 transition-colors"
-        >
-          {visibleCategories.size === WORK_CATEGORY_IDS.length + 1 ? '全解除' : '全選択'}
-        </button>
-        {WORK_CATEGORIES.map((cat) => {
-          const active = visibleCategories.has(cat.id);
-          return (
-            <button
-              key={cat.id}
-              onClick={() => toggleCategory(cat.id)}
-              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
-                active ? 'border-transparent text-white' : 'border-gray-300 text-gray-400 bg-white'
-              }`}
-              style={active ? { backgroundColor: cat.color } : {}}
-            >
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: active ? 'white' : cat.color }}
-              />
-              {cat.label}
-            </button>
-          );
-        })}
-        <button
-          onClick={() => toggleCategory('__none__')}
-          className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
-            visibleCategories.has('__none__')
-              ? 'border-gray-400 bg-gray-100 text-gray-700'
-              : 'border-gray-300 text-gray-400 bg-white'
+          onClick={() => dispatch({ type: 'UPDATE_SETTINGS', payload: { showWeekends: !showWeekends } })}
+          className={`text-xs px-2.5 py-1 font-medium rounded-lg border transition-colors ${
+            showWeekends
+              ? 'bg-accent-soft text-accent border-accent/40'
+              : 'bg-surface text-ink-muted border-edge hover:bg-surface-hover'
           }`}
-          title="種別未設定の予定"
+          title="週末の表示を切替"
         >
-          未分類
+          週末
         </button>
-      </div>
 
-      {/* Member filter chips */}
-      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        <span className="text-[10px] text-gray-500 mr-1">メンバー:</span>
-        <button
-          onClick={toggleAllMembers}
-          className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 transition-colors"
-        >
-          {visibleMembers.size === MEMBERS.length ? '全解除' : '全選択'}
-        </button>
-        {orderedMembers.map((member) => (
-          <label key={member.id} className="inline-flex items-center gap-1 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={visibleMembers.has(member.id)}
-              onChange={() => toggleMember(member.id)}
-              className="sr-only"
-            />
-            <span
-              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
-                visibleMembers.has(member.id)
-                  ? 'border-transparent text-white'
-                  : 'border-gray-300 text-gray-400 bg-white'
-              }`}
-              style={
-                visibleMembers.has(member.id) ? { backgroundColor: member.color } : {}
-              }
-            >
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{
-                  backgroundColor: visibleMembers.has(member.id) ? 'white' : member.color,
-                }}
-              />
-              {member.nameJa}
-            </span>
-          </label>
-        ))}
+        {loading && (
+          <svg className="w-3.5 h-3.5 animate-spin text-accent" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        )}
       </div>
 
       {/* Calendar grid */}
-      <div className="bg-white rounded-xl overflow-hidden border border-gray-200 flex-1 min-h-0 shadow-sm">
+      <div className="bg-surface rounded-xl overflow-hidden border border-edge flex-1 min-h-0 shadow-sm">
         <div ref={scrollRef} className="h-full overflow-auto">
           <div className="flex flex-col">
 
@@ -644,11 +543,11 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
             {axisMode === 'date' && (
               <>
                 {/* Sticky header */}
-                <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+                <div className="sticky top-0 z-20 bg-raised border-b border-edge w-max min-w-full">
                   {/* Day headers row */}
-                  <div className="flex">
+                  <div className="flex w-max min-w-full">
                     {/* Time column spacer */}
-                    <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-30 bg-white" />
+                    <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-30 bg-raised" />
 
                     {/* Day columns */}
                     {displayDates.map((date, dIdx) => {
@@ -658,20 +557,21 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                       return (
                         <div
                           key={toISODate(date)}
-                          className={`flex-1 min-w-[120px] text-center py-2 ${
-                            dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
-                          } ${today ? 'bg-blue-50' : ''}`}
+                          className={`flex-1 text-center py-2 ${
+                            dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
+                          } ${today ? 'bg-accent-soft' : ''}`}
+                          style={{ minWidth: `${dayColMinWidth}px` }}
                         >
-                          <div className={`text-xs ${isWeekend ? 'text-gray-400' : 'text-gray-500'}`}>
+                          <div className={`text-xs ${isWeekend ? 'text-ink-faint' : 'text-ink-muted'}`}>
                             {getDayNameJa(date)}
                           </div>
                           <div
                             className={`text-sm font-bold ${
                               today
-                                ? 'text-blue-600'
+                                ? 'text-accent'
                                 : isWeekend
-                                  ? 'text-gray-400'
-                                  : 'text-gray-800'
+                                  ? 'text-ink-faint'
+                                  : 'text-ink'
                             }`}
                           >
                             {date.getMonth() + 1}/{date.getDate()}
@@ -682,8 +582,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                               {visibleOrderedMembers.map((member) => (
                                 <div
                                   key={member.id}
-                                  className="flex-1 min-w-0 text-[9px] text-white font-medium rounded-sm py-0.5 truncate"
-                                  style={{ backgroundColor: member.color }}
+                                  className="flex-1 min-w-0 text-[9px] font-medium rounded-sm py-0.5 truncate"
+                                  style={{ backgroundColor: member.color, color: getContrastText(member.color) }}
                                   title={member.nameJa}
                                 >
                                   {member.nameJa}
@@ -699,18 +599,19 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
 
                   {/* All-day events banner */}
                   {hasAnyAllDayEvents && (
-                    <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
+                    <div className="flex w-max min-w-full border-t border-edge" style={{ minHeight: '24px' }}>
                       {/* Time label */}
-                      <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-gray-400 sticky left-0 z-30 bg-white">
+                      <div className="w-14 shrink-0 border-r border-edge flex items-center justify-end pr-2 text-[10px] text-ink-faint sticky left-0 z-30 bg-raised">
                         終日
                       </div>
                       {/* Day columns */}
                       {displayDates.map((date, dIdx) => (
                         <div
                           key={`allday-${toISODate(date)}`}
-                          className={`flex-1 min-w-[120px] flex ${
-                            dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
+                          className={`flex-1 flex ${
+                            dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
                           }`}
+                          style={{ minWidth: `${dayColMinWidth}px` }}
                         >
                           {visibleOrderedMembers.map((member) => {
                             const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
@@ -719,22 +620,17 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             return (
                               <div
                                 key={`allday-${member.id}-${toISODate(date)}`}
-                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-gray-50"
+                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-surface-hover"
                                 onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(toISODate(date), '08:00', member.id, { isAllDay: true })}
                               >
-                                {/* Outlook all-day — gray pill unless 'colorOutlookEvents' is on */}
+                                {/* Outlook all-day — neutral chip unless 'colorOutlookEvents' is on */}
                                 {allDayEvts.map((evt) => (
                                   <div
                                     key={evt.id}
-                                    className="text-[10px] font-medium leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer"
-                                    style={useOutlookColor ? {
-                                      backgroundColor: member.color,
-                                      color: 'white',
-                                    } : {
-                                      backgroundColor: '#E5E7EB',
-                                      color: '#374151',
-                                      borderLeft: '3px solid #9CA3AF',
-                                    }}
+                                    className={`text-[10px] font-semibold leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer ${
+                                      useOutlookColor ? 'event-solid' : 'event-neutral'
+                                    }`}
+                                    style={useOutlookColor ? { '--mc': member.color, '--on-mc': getContrastText(member.color) } : {}}
                                     title={evt.title}
                                     onClick={(e) => { e.stopPropagation(); onEventClick(evt); }}
                                     onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(evt); }}
@@ -742,26 +638,20 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                     {evt.title}
                                   </div>
                                 ))}
-                                {/* App-created all-day — solid member color, sync badge */}
+                                {/* App-created all-day — solid when synced, tint+hatch when draft */}
                                 {allDayAsg.map((a) => {
                                   const synced = !!a.outlookEventId;
                                   return (
                                     <div
                                       key={a.id}
-                                      className="text-[10px] font-medium leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer flex items-center gap-1"
-                                      style={{
-                                        backgroundColor: member.color,
-                                        color: 'white',
-                                        borderLeft: synced ? undefined : `3px dashed ${member.color}`,
-                                        backgroundImage: synced ? undefined
-                                          : `repeating-linear-gradient(135deg, ${member.color}, ${member.color} 4px, ${member.color}cc 4px, ${member.color}cc 8px)`,
-                                      }}
+                                      className={`text-[10px] font-semibold leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer flex items-center gap-1 ${alldayChipClass(synced)}`}
+                                      style={{ '--mc': member.color, '--on-mc': getContrastText(member.color) }}
                                       title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
                                       onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
                                       onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
                                     >
                                       <span className={`text-[8px] leading-none px-1 py-px rounded font-bold ${
-                                        synced ? 'bg-white/30 text-white' : 'bg-amber-300 text-amber-900'
+                                        synced ? 'bg-emerald-600 text-white' : 'bg-amber-300 text-amber-900'
                                       }`}>
                                         {synced ? '✓' : '仮'}
                                       </span>
@@ -779,21 +669,17 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                 </div>
 
                 {/* Time grid body */}
-                <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
+                <div className="flex w-max min-w-full" style={{ minHeight: `${gridHeight}px` }}>
                   {/* Time labels column (sticky left) */}
-                  <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-10 bg-white">
+                  <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-10 bg-raised">
                     {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
                       <div
                         key={hour}
-                        className="border-b border-gray-100 text-right pr-2 text-[11px] text-gray-400 relative"
+                        className="border-b border-grid text-right pr-2 text-[11px] text-ink-faint relative"
                         style={{ height: `${HOUR_HEIGHT}px` }}
                       >
                         <span className="absolute -top-2 right-2">
                           {String(hour).padStart(2, '0')}:00
-                        </span>
-                        {/* Half-hour tick */}
-                        <span className="absolute right-2 text-[10px] text-gray-300" style={{ top: `${HOUR_HEIGHT / 2 - 6}px` }}>
-                          {String(hour).padStart(2, '0')}:30
                         </span>
                       </div>
                     ))}
@@ -808,9 +694,10 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                     return (
                       <div
                         key={toISODate(date)}
-                        className={`flex-1 min-w-[120px] flex relative ${
-                          dIdx < displayDates.length - 1 ? 'border-r border-gray-200' : ''
-                        } ${today ? 'bg-blue-50/30' : ''} ${isWeekend ? 'bg-gray-50/50' : ''}`}
+                        className={`flex-1 flex relative ${
+                          dIdx < displayDates.length - 1 ? 'border-r border-edge' : ''
+                        } ${today ? 'bg-today' : ''}`}
+                        style={{ minWidth: `${dayColMinWidth}px` }}
                       >
                         {/* Current time indicator */}
                         {todayInThisColumn && currentTimePos !== null && (
@@ -819,8 +706,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             style={{ top: `${currentTimePos}px` }}
                           >
                             <div className="relative">
-                              <div className="absolute left-0 w-2 h-2 rounded-full bg-red-500 -translate-y-1/2" />
-                              <div className="absolute left-0 right-0 h-px bg-red-500" />
+                              <div className="absolute left-0 w-2 h-2 rounded-full bg-now -translate-y-1/2" />
+                              <div className="absolute left-0 right-0 h-[2px] bg-now" />
                             </div>
                           </div>
                         )}
@@ -835,9 +722,12 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             <div
                               key={`${toISODate(date)}-${member.id}`}
                               className={`flex-1 min-w-0 relative ${
-                                mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-100' : ''
+                                mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-grid' : ''
                               }`}
                             >
+                              {/* Off-hours / weekend shading (below cells in DOM order) */}
+                              {renderOffHours(isWeekend)}
+
                               {/* Hour grid lines (drop targets) */}
                               {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => {
                                 const cellKey = `${toISODate(date)}-${member.id}-${hour}`;
@@ -845,8 +735,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 return (
                                   <div
                                     key={hour}
-                                    className={`border-b border-gray-100 relative transition-colors ${
-                                      isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
+                                    className={`border-b border-grid relative transition-colors ${
+                                      isDragOver ? 'bg-drop ring-1 ring-inset ring-accent' : ''
                                     }`}
                                     style={{ height: `${HOUR_HEIGHT}px` }}
                                     onClick={() => handleSlotSingleClick(date, hour, 0, member.id)}
@@ -857,7 +747,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                   >
                                     {/* Half-hour divider */}
                                     <div
-                                      className="absolute left-0 right-0 border-b border-gray-50"
+                                      className="absolute left-0 right-0 border-b border-grid-faint"
                                       style={{ top: `${HOUR_HEIGHT / 2}px` }}
                                     />
                                   </div>
@@ -903,24 +793,25 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
             {axisMode === 'person' && (
               <>
                 {/* Sticky header */}
-                <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
+                <div className="sticky top-0 z-20 bg-raised border-b border-edge w-max min-w-full">
                   {/* Member headers row */}
-                  <div className="flex">
+                  <div className="flex w-max min-w-full">
                     {/* Time column spacer */}
-                    <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-30 bg-white" />
+                    <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-30 bg-raised" />
 
                     {/* Member columns */}
                     {visibleOrderedMembers.map((member, mIdx) => (
                       <div
                         key={member.id}
-                        className={`flex-1 min-w-[100px] text-center py-2 ${
-                          mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
+                        className={`flex-1 text-center py-2 ${
+                          mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                         }`}
+                        style={{ minWidth: `${personColMinWidth}px` }}
                       >
                         {/* Member name with color bar */}
                         <div
-                          className="text-xs font-bold text-white rounded-sm mx-1 py-1"
-                          style={{ backgroundColor: member.color }}
+                          className="text-xs font-bold rounded-sm mx-1 py-1"
+                          style={{ backgroundColor: member.color, color: getContrastText(member.color) }}
                         >
                           {member.nameJa}
                         </div>
@@ -934,10 +825,10 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 key={toISODate(date)}
                                 className={`flex-1 min-w-0 text-[9px] font-medium rounded-sm py-0.5 truncate ${
                                   today
-                                    ? 'bg-blue-100 text-blue-700'
+                                    ? 'bg-accent-soft text-accent font-semibold'
                                     : isWeekend
-                                      ? 'bg-gray-100 text-gray-400'
-                                      : 'bg-gray-100 text-gray-600'
+                                      ? 'bg-canvas text-ink-faint'
+                                      : 'bg-canvas text-ink-muted'
                                 }`}
                                 title={`${date.getMonth() + 1}/${date.getDate()} ${getDayNameJa(date)}`}
                               >
@@ -952,18 +843,19 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
 
                   {/* All-day events banner */}
                   {hasAnyAllDayEvents && (
-                    <div className="flex border-t border-gray-200" style={{ minHeight: '24px' }}>
+                    <div className="flex w-max min-w-full border-t border-edge" style={{ minHeight: '24px' }}>
                       {/* Time label */}
-                      <div className="w-14 shrink-0 border-r border-gray-200 flex items-center justify-end pr-2 text-[10px] text-gray-400 sticky left-0 z-30 bg-white">
+                      <div className="w-14 shrink-0 border-r border-edge flex items-center justify-end pr-2 text-[10px] text-ink-faint sticky left-0 z-30 bg-raised">
                         終日
                       </div>
                       {/* Member columns */}
                       {visibleOrderedMembers.map((member, mIdx) => (
                         <div
                           key={`allday-member-${member.id}`}
-                          className={`flex-1 min-w-[100px] flex ${
-                            mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
+                          className={`flex-1 flex ${
+                            mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                           }`}
+                          style={{ minWidth: `${personColMinWidth}px` }}
                         >
                           {displayDates.map((date) => {
                             const allDayEvts = getAllDayEventsForMemberDate(member.email, date);
@@ -971,19 +863,19 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             return (
                               <div
                                 key={`allday-${member.id}-${toISODate(date)}`}
-                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-gray-50"
+                                className="flex-1 min-w-0 overflow-hidden px-0.5 py-0.5 cursor-pointer hover:bg-surface-hover"
                                 onDoubleClick={() => onSlotDoubleClick && onSlotDoubleClick(toISODate(date), '08:00', member.id, { isAllDay: true })}
                               >
                                 {allDayEvts.map((evt) => (
                                   <div
                                     key={evt.id}
-                                    className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5"
-                                    style={{
-                                      backgroundColor: `${member.color}20`,
-                                      borderLeft: `2px solid ${member.color}`,
-                                      color: member.color,
-                                    }}
+                                    className={`text-[9px] font-semibold truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer ${
+                                      colorOutlookEvents ? 'event-solid' : 'event-neutral'
+                                    }`}
+                                    style={colorOutlookEvents ? { '--mc': member.color, '--on-mc': getContrastText(member.color) } : {}}
                                     title={evt.title}
+                                    onClick={(e) => { e.stopPropagation(); onEventClick(evt); }}
+                                    onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(evt); }}
                                   >
                                     {evt.title}
                                   </div>
@@ -993,12 +885,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                   return (
                                     <div
                                       key={a.id}
-                                      className="text-[9px] truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1"
-                                      style={{
-                                        backgroundColor: `${member.color}33`,
-                                        borderLeft: `2px ${synced ? 'solid' : 'dashed'} ${member.color}`,
-                                        color: member.color,
-                                      }}
+                                      className={`text-[9px] font-semibold truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1 ${alldayChipClass(synced)}`}
+                                      style={{ '--mc': member.color, '--on-mc': getContrastText(member.color) }}
                                       title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
                                       onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
                                       onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
@@ -1022,21 +910,17 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                 </div>
 
                 {/* Time grid body */}
-                <div className="flex" style={{ minHeight: `${gridHeight}px` }}>
+                <div className="flex w-max min-w-full" style={{ minHeight: `${gridHeight}px` }}>
                   {/* Time labels column (sticky left) */}
-                  <div className="w-14 shrink-0 border-r border-gray-200 sticky left-0 z-10 bg-white">
+                  <div className="w-14 shrink-0 border-r border-edge sticky left-0 z-10 bg-raised">
                     {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => (
                       <div
                         key={hour}
-                        className="border-b border-gray-100 text-right pr-2 text-[11px] text-gray-400 relative"
+                        className="border-b border-grid text-right pr-2 text-[11px] text-ink-faint relative"
                         style={{ height: `${HOUR_HEIGHT}px` }}
                       >
                         <span className="absolute -top-2 right-2">
                           {String(hour).padStart(2, '0')}:00
-                        </span>
-                        {/* Half-hour tick */}
-                        <span className="absolute right-2 text-[10px] text-gray-300" style={{ top: `${HOUR_HEIGHT / 2 - 6}px` }}>
-                          {String(hour).padStart(2, '0')}:30
                         </span>
                       </div>
                     ))}
@@ -1046,9 +930,10 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                   {visibleOrderedMembers.map((member, mIdx) => (
                     <div
                       key={member.id}
-                      className={`flex-1 min-w-[100px] flex relative ${
-                        mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-gray-200' : ''
+                      className={`flex-1 flex relative ${
+                        mIdx < visibleOrderedMembers.length - 1 ? 'border-r border-edge' : ''
                       }`}
+                      style={{ minWidth: `${personColMinWidth}px` }}
                     >
                       {/* Day sub-columns */}
                       {displayDates.map((date, dIdx) => {
@@ -1062,9 +947,12 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                           <div
                             key={`${member.id}-${toISODate(date)}`}
                             className={`flex-1 min-w-0 relative ${
-                              dIdx < displayDates.length - 1 ? 'border-r border-gray-100' : ''
-                            } ${today ? 'bg-blue-50/30' : ''} ${isWeekend ? 'bg-gray-50/50' : ''}`}
+                              dIdx < displayDates.length - 1 ? 'border-r border-grid' : ''
+                            } ${today ? 'bg-today' : ''}`}
                           >
+                            {/* Off-hours / weekend shading (below cells in DOM order) */}
+                            {renderOffHours(isWeekend)}
+
                             {/* Current time indicator */}
                             {today && currentTimePos !== null && (
                               <div
@@ -1072,8 +960,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 style={{ top: `${currentTimePos}px` }}
                               >
                                 <div className="relative">
-                                  <div className="absolute left-0 w-2 h-2 rounded-full bg-red-500 -translate-y-1/2" />
-                                  <div className="absolute left-0 right-0 h-px bg-red-500" />
+                                  <div className="absolute left-0 w-2 h-2 rounded-full bg-now -translate-y-1/2" />
+                                  <div className="absolute left-0 right-0 h-[2px] bg-now" />
                                 </div>
                               </div>
                             )}
@@ -1085,8 +973,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                               return (
                                 <div
                                   key={hour}
-                                  className={`border-b border-gray-100 relative transition-colors ${
-                                    isDragOver ? 'bg-blue-100/60 ring-1 ring-inset ring-blue-400' : ''
+                                  className={`border-b border-grid relative transition-colors ${
+                                    isDragOver ? 'bg-drop ring-1 ring-inset ring-accent' : ''
                                   }`}
                                   style={{ height: `${HOUR_HEIGHT}px` }}
                                   onClick={() => handleSlotSingleClick(date, hour, 0, member.id)}
@@ -1097,7 +985,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 >
                                   {/* Half-hour divider */}
                                   <div
-                                    className="absolute left-0 right-0 border-b border-gray-50"
+                                    className="absolute left-0 right-0 border-b border-grid-faint"
                                     style={{ top: `${HOUR_HEIGHT / 2}px` }}
                                   />
                                 </div>

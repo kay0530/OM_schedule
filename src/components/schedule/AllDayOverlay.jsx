@@ -19,15 +19,15 @@ export default function AllDayOverlay({ items, totalHeight }) {
       {items.map((it, idx) => (
         <div
           key={it.id}
-          className="absolute top-0 pointer-events-none"
+          className="absolute top-0 pointer-events-none allday-band"
           style={{
             height: `${totalHeight}px`,
             left: `${(idx / count) * 100}%`,
             width: `${100 / count}%`,
-            backgroundColor: `${it.color}1f`,
+            '--mc': it.color,
             borderLeft: `3px ${it.draft ? 'dashed' : 'solid'} ${it.color}`,
             backgroundImage: it.draft
-              ? `repeating-linear-gradient(135deg, transparent, transparent 5px, ${it.color}12 5px, ${it.color}12 10px)`
+              ? 'repeating-linear-gradient(135deg, transparent, transparent 5px, color-mix(in srgb, var(--mc) 10%, transparent) 5px, color-mix(in srgb, var(--mc) 10%, transparent) 10px)'
               : undefined,
             zIndex: 6,
           }}

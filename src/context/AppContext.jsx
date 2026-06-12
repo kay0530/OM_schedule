@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useReducer, useEffect, useRef, useCallback, useMemo } from 'react';
 import { isFirestoreEnabled, saveAssignments, loadAssignments, subscribeAssignments } from '../services/firestoreService';
+import { WORK_CATEGORY_IDS } from '../data/workCategories';
 
 // Debounce Firestore writes — batches rapid edits (e.g. multi-member assign,
 // Outlook reconcile sweep) into a single write to avoid hitting the
@@ -30,6 +31,8 @@ function makeDebouncedSaver() {
 
 const AppContext = createContext(null);
 
+// NOTE: if the `settings` key ever changes, also update the FOUC guard
+// script in index.html which reads it before React mounts.
 const STORAGE_KEYS = {
   assignments: 'construction-schedule-assignments',
   settings: 'construction-schedule-settings',
@@ -81,6 +84,15 @@ const DEFAULT_SETTINGS = {
   workingHours: { start: '08:00', end: '18:00' },
   showWeekends: false,
   colorOutlookEvents: true,
+  // 'light' | 'dark' | 'system' — per-device personal preference.
+  // NOTE: settings are NOT synced to Firestore (assignments only); if that
+  // ever changes, exclude `theme` from the sync.
+  theme: 'light',
+  // Shared view filters (hidden-list form so newly added members/categories
+  // default to visible). '__none__' = uncategorized in hiddenCategoryIds.
+  hiddenMemberIds: [],
+  hiddenCategoryIds: [],
+  viewAxis: 'date', // 'date' | 'person' (週間ビュー)
 };
 
 /**
@@ -106,6 +118,29 @@ function loadInitialState() {
     }
   } catch {
     localStorage.removeItem(STORAGE_KEYS.settings);
+  }
+
+  // One-time migration of pre-settings filter keys (view axis + visible
+  // categories lived in their own localStorage keys until the toolbar rework).
+  // READ-ONLY here: StrictMode double-invokes this initializer in dev, so
+  // removing the old keys on first call would make the kept second call see
+  // nothing. Deletion happens in a mount effect in AppProvider.
+  try {
+    const oldAxis = localStorage.getItem('construction-schedule-view-axis');
+    if (oldAxis) {
+      settings = { ...settings, viewAxis: oldAxis === 'person' ? 'person' : 'date' };
+    }
+    const oldCats = localStorage.getItem('construction-schedule-visible-categories');
+    if (oldCats) {
+      const visible = JSON.parse(oldCats);
+      if (Array.isArray(visible)) {
+        // Old format was a VISIBLE list; convert to hidden list
+        const all = [...WORK_CATEGORY_IDS, '__none__'];
+        settings = { ...settings, hiddenCategoryIds: all.filter((id) => !visible.includes(id)) };
+      }
+    }
+  } catch {
+    // ignore migration errors
   }
 
   return { assignments, settings };
@@ -359,6 +394,17 @@ export function AppProvider({ children }) {
       // Ignore quota errors
     }
   }, [state.settings]);
+
+  // Drop legacy filter keys once the migrated settings have been persisted
+  // (kept out of loadInitialState — see the StrictMode note there)
+  useEffect(() => {
+    try {
+      localStorage.removeItem('construction-schedule-view-axis');
+      localStorage.removeItem('construction-schedule-visible-categories');
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const value = useMemo(
     () => ({

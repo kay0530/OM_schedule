@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { timeStringToMinutes } from '../../utils/dateUtils';
+import { getContrastText } from '../../utils/colorUtils';
 
 /**
  * Single event block rendered on the weekly calendar grid.
@@ -41,26 +42,19 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
   const isSyncedToOutlook = isAssignment && !!event.outlookEventId;
   const isDraftOnly = isAssignment && !event.outlookEventId;
 
-  let bgColor, borderColor, textColor;
-  if (isAssignment) {
-    bgColor = memberColor ? `${memberColor}33` : 'rgba(59, 130, 246, 0.2)';
-    borderColor = memberColor || '#3B82F6';
-    textColor = memberColor || '#3B82F6';
-  } else if (isStatus) {
-    bgColor = '#F3F4F6';
-    borderColor = '#9CA3AF';
-    textColor = '#6B7280';
-  } else if (colorOutlook && memberColor) {
-    // Outlook / calendar event — use member color (lighter tint) for consistency
-    bgColor = `${memberColor}26`;
-    borderColor = memberColor;
-    textColor = memberColor;
-  } else {
-    // Outlook / calendar event — classic grey
-    bgColor = '#F3F4F6';
-    borderColor = '#D1D5DB';
-    textColor = '#374151';
-  }
+  // Chip styling class (see index.css):
+  //   event-solid   = Outlook-style member-colored fill + contrast text
+  //   event-tint    = draft (not synced) assignment: tint + dashed + hatch
+  //   event-neutral = status events / colorless Outlook events
+  let chipClass;
+  if (isStatus) chipClass = 'event-neutral';
+  else if (isAssignment) chipClass = isDraftOnly ? 'event-tint' : 'event-solid';
+  else chipClass = colorOutlook && memberColor ? 'event-solid' : 'event-neutral';
+
+  const mc = memberColor || '#3B82F6';
+  const chipVars = chipClass === 'event-neutral'
+    ? {}
+    : { '--mc': mc, '--on-mc': getContrastText(mc) };
 
   const title = event.opportunityName || event.title || event.statusLabel || '';
 
@@ -141,9 +135,9 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
     <div
       ref={blockRef}
       data-event-block="true"
-      className={`absolute rounded overflow-hidden cursor-pointer transition-shadow hover:shadow-md ${
+      className={`absolute rounded overflow-hidden cursor-pointer transition-shadow hover:shadow-md hover:brightness-105 ${chipClass} ${
         isResizing ? 'opacity-80 shadow-lg' : ''
-      } ${isDraggable ? 'select-none' : ''} ${isActive ? 'ring-2 ring-blue-500 shadow-md' : ''}`}
+      } ${isDraggable ? 'select-none' : ''} ${isActive ? 'ring-2 ring-accent ring-offset-1 ring-offset-surface' : ''}`}
       title={`${title}${startTime && endTime ? ` (${startTime}–${endTime})` : ''}${event.location ? `\n📍 ${event.location}` : ''}${isAssignment ? (isSyncedToOutlook ? '\n✓ Outlook送信済み' : '\n仮（未送信）') : ''}`}
       style={{
         top: `${topOffset}px`,
@@ -151,13 +145,7 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
         // Lane-based horizontal layout when events overlap
         left: laneCount > 1 ? `calc(${(laneIndex / laneCount) * 100}% + 1px)` : '2px',
         width: laneCount > 1 ? `calc(${100 / laneCount}% - 2px)` : 'calc(100% - 4px)',
-        // Draft (not yet synced to Outlook): hatched background for at-a-glance distinction
-        backgroundColor: bgColor,
-        backgroundImage: isDraftOnly
-          ? `repeating-linear-gradient(135deg, transparent, transparent 4px, ${borderColor}1a 4px, ${borderColor}1a 8px)`
-          : undefined,
-        // Solid border = synced, dashed = draft
-        borderLeft: `3px ${isDraftOnly ? 'dashed' : 'solid'} ${borderColor}`,
+        ...chipVars,
         zIndex: showTooltip || isResizing ? 20 : 10,
       }}
       draggable={isDraggable && !isResizing}
@@ -175,10 +163,10 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
       onMouseEnter={() => !isResizing && setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
-      {/* Sync status badge (assignments only) */}
+      {/* Sync status badge (assignments only) — semantic colors, intentionally fixed */}
       {isAssignment && height >= 14 && (
         <span
-          className={`absolute top-0.5 right-0.5 text-[8px] leading-none px-1 py-px rounded font-bold ${
+          className={`absolute top-0.5 right-0.5 text-[8px] leading-none px-1 py-px rounded font-bold ring-1 ring-white/40 ${
             isSyncedToOutlook
               ? 'bg-emerald-600 text-white'
               : 'bg-amber-400 text-amber-900'
@@ -189,18 +177,18 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
         </span>
       )}
 
-      {/* Event title */}
+      {/* Event title (color inherits from chip class) */}
       {height >= 14 && (
         <p
-          className="text-[10px] font-medium leading-tight px-1 pt-0.5 truncate"
-          style={{ color: textColor, paddingRight: isAssignment ? '14px' : undefined }}
+          className="text-[10px] font-semibold leading-tight px-1 pt-0.5 truncate"
+          style={{ paddingRight: isAssignment ? '14px' : undefined }}
         >
           {title}
         </p>
       )}
       {/* Time range */}
       {height >= 30 && (
-        <p className="text-[9px] text-gray-400 truncate leading-tight px-1">
+        <p className="text-[9px] opacity-75 truncate leading-tight px-1">
           {startTime}–{endTime}
         </p>
       )}
@@ -213,36 +201,38 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
           onClick={(e) => e.stopPropagation()}
           title="ドラッグでリサイズ"
         >
-          <div className="mx-auto mt-0.5 w-4 h-0.5 rounded-full bg-gray-400/50" />
+          <div className="mx-auto mt-0.5 w-4 h-0.5 rounded-full bg-current opacity-50" />
         </div>
       )}
 
       {/* Tooltip on hover */}
       {showTooltip && !isResizing && (
-        <div className="absolute left-full top-0 ml-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 min-w-36 pointer-events-none">
-          <p className="text-xs font-semibold text-gray-800 mb-0.5">{title}</p>
-          <p className="text-[11px] text-gray-500">
+        <div className="absolute left-full top-0 ml-1 z-50 bg-raised border border-edge rounded-lg shadow-lg p-2 min-w-36 pointer-events-none">
+          <p className="text-xs font-semibold text-ink mb-0.5">{title}</p>
+          <p className="text-[11px] text-ink-muted">
             {startTime} – {endTime}
           </p>
           {isAssignment && (
-            <span className="inline-block mt-1 text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded mr-1">
+            <span className="inline-block mt-1 text-[10px] bg-accent-soft text-accent px-1.5 py-0.5 rounded mr-1">
               施工予定
             </span>
           )}
           {isAssignment && (
             <span
               className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${
-                isSyncedToOutlook ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                isSyncedToOutlook
+                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                  : 'bg-amber-50 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300'
               }`}
             >
               {isSyncedToOutlook ? '✓ Outlook送信済み' : '仮（未送信）'}
             </span>
           )}
           {isDraggable && (
-            <p className="text-[9px] text-gray-400 mt-1">ドラッグで移動可</p>
+            <p className="text-[9px] text-ink-faint mt-1">ドラッグで移動可</p>
           )}
           {event.location && (
-            <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+            <p className="text-[10px] text-ink-faint mt-0.5 truncate">
               📍 {event.location}
             </p>
           )}

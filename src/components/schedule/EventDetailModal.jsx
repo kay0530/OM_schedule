@@ -152,13 +152,13 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
   let sourceLabel, sourceBadgeClass;
   if (isOutlook && !isAssignment) {
     sourceLabel = 'Outlook';
-    sourceBadgeClass = 'bg-blue-50 text-blue-700';
+    sourceBadgeClass = 'bg-accent-soft text-accent';
   } else if (isAssignment) {
     sourceLabel = '手動割当';
-    sourceBadgeClass = 'bg-emerald-50 text-emerald-700';
+    sourceBadgeClass = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300';
   } else {
     sourceLabel = 'ステータス';
-    sourceBadgeClass = 'bg-gray-100 text-gray-600';
+    sourceBadgeClass = 'bg-canvas text-ink-muted';
   }
 
   function handleEnterEditMode() {
@@ -471,14 +471,14 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
     <>
       {/* Backdrop (lighter & not blocking — modal is draggable so user may want to see the calendar) */}
       <div
-        className="fixed inset-0 bg-black/20 z-40"
+        className="fixed inset-0 bg-black/20 dark:bg-black/40 z-40"
         onClick={onClose}
       />
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden max-h-[80vh] flex flex-col pointer-events-auto"
+          className="bg-raised text-ink rounded-xl shadow-2xl w-full max-w-md overflow-hidden max-h-[80vh] flex flex-col pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
           style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
         >
@@ -499,14 +499,14 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
               className="flex items-start justify-between mb-4 cursor-move select-none"
               onMouseDown={handleHeaderMouseDown}
             >
-              <h2 className="text-lg font-bold text-gray-800 leading-tight pr-4">
+              <h2 className="text-lg font-bold text-ink leading-tight pr-4">
                 {editMode ? '予定を編集' : (
                   event.opportunityId ? (
                     <a
                       href={`https://altenergyinc.my.salesforce.com/lightning/r/${event.sourceType === 'maintenance' ? 'Maintenance__c' : 'Opportunity'}/${event.opportunityId}/view`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:underline text-blue-700"
+                      className="hover:underline text-accent"
                       title="Salesforceで開く"
                     >
                       {event.opportunityName || event.title || 'イベント詳細'}
@@ -516,9 +516,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
               </h2>
               <button
                 onClick={onClose}
-                className="p-1 rounded-lg hover:bg-gray-100 transition flex-shrink-0"
+                className="p-1 rounded-lg hover:bg-surface-hover transition flex-shrink-0"
               >
-                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-5 h-5 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -526,7 +526,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
             {/* Error message */}
             {error && (
-              <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 dark:bg-red-500/15 dark:text-red-300">
                 {error}
               </div>
             )}
@@ -536,10 +536,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
               <div className="space-y-4">
                 {/* Title (without category prefix) */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
+                  <label className="block text-xs text-ink-muted mb-1">
                     タイトル
                     {editWorkCategory && (
-                      <span className="ml-2 text-gray-400 text-[10px]">
+                      <span className="ml-2 text-ink-faint text-[10px]">
                         保存時: 「【{editWorkCategory === 'その他（手入力）' ? editCustomCategory : editWorkCategory}】{editTitle.replace(/^【[^】]+】/, '')}」
                       </span>
                     )}
@@ -548,14 +548,14 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     type="text"
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    className="w-full px-3 py-2 text-sm border border-edge rounded-lg focus:ring-2 focus:ring-accent focus:border-accent outline-none"
                     placeholder="予定のタイトル"
                   />
                 </div>
 
                 {/* Work category */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">作業種別</label>
+                  <label className="block text-xs text-ink-muted mb-1">作業種別</label>
                   <div className="flex flex-wrap gap-1.5">
                     {[...PRESET_CATEGORIES, 'その他（手入力）'].map((cat) => (
                       <button
@@ -564,8 +564,8 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         onClick={() => setEditWorkCategory(editWorkCategory === cat ? '' : cat)}
                         className={`px-2.5 py-1 rounded-lg border text-xs transition ${
                           editWorkCategory === cat
-                            ? 'border-orange-500 bg-orange-50 text-orange-800 ring-1 ring-orange-500'
-                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                            ? 'border-orange-500 bg-orange-50 text-orange-800 ring-1 ring-orange-500 dark:bg-orange-500/15 dark:text-orange-300'
+                            : 'border-edge bg-raised text-ink hover:bg-surface-hover'
                         }`}
                       >
                         {cat}
@@ -578,19 +578,19 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                       value={editCustomCategory}
                       onChange={(e) => setEditCustomCategory(e.target.value)}
                       placeholder="作業種別を入力..."
-                      className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      className="mt-2 w-full px-3 py-2 border border-edge rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
                     />
                   )}
                 </div>
 
                 {/* Date */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">日付</label>
+                  <label className="block text-xs text-ink-muted mb-1">日付</label>
                   <input
                     type="date"
                     value={editDate}
                     onChange={(e) => setEditDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    className="w-full px-3 py-2 text-sm border border-edge rounded-lg focus:ring-2 focus:ring-accent focus:border-accent outline-none"
                   />
                 </div>
 
@@ -600,20 +600,20 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     type="checkbox"
                     checked={editIsAllDay}
                     onChange={(e) => setEditIsAllDay(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    className="w-4 h-4 text-accent rounded border-edge focus:ring-accent"
                   />
-                  <span className="text-sm text-gray-700">終日</span>
+                  <span className="text-sm text-ink">終日</span>
                 </label>
 
                 {/* Time (hidden when 終日) */}
                 {!editIsAllDay && (
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <label className="block text-xs text-gray-500 mb-1">開始時間</label>
+                      <label className="block text-xs text-ink-muted mb-1">開始時間</label>
                       <select
                         value={editStartTime}
                         onChange={(e) => setEditStartTime(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        className="w-full px-3 py-2 text-sm border border-edge rounded-lg focus:ring-2 focus:ring-accent focus:border-accent outline-none"
                       >
                         {TIME_OPTIONS.map((t) => (
                           <option key={t} value={t}>{t}</option>
@@ -621,11 +621,11 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                       </select>
                     </div>
                     <div className="flex-1">
-                      <label className="block text-xs text-gray-500 mb-1">終了時間</label>
+                      <label className="block text-xs text-ink-muted mb-1">終了時間</label>
                       <select
                         value={editEndTime}
                         onChange={(e) => setEditEndTime(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        className="w-full px-3 py-2 text-sm border border-edge rounded-lg focus:ring-2 focus:ring-accent focus:border-accent outline-none"
                       >
                         {TIME_OPTIONS.map((t) => (
                           <option key={t} value={t}>{t}</option>
@@ -637,13 +637,13 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
                 {/* Members (multi-select) */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
+                  <label className="block text-xs text-ink-muted mb-1">
                     担当者 <span className="text-red-500">*</span>
                     {editMemberIds.length > 0 && (
-                      <span className="ml-2 text-blue-600">({editMemberIds.length}名)</span>
+                      <span className="ml-2 text-accent">({editMemberIds.length}名)</span>
                     )}
                     {isManualAssignment && (
-                      <span className="ml-2 text-gray-400 text-[10px]">チェック追加/解除で割当を一括変更</span>
+                      <span className="ml-2 text-ink-faint text-[10px]">チェック追加/解除で割当を一括変更</span>
                     )}
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -659,8 +659,8 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                           onClick={() => !disabled && toggleEditMember(m.id)}
                           className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm transition ${
                             isSelected
-                              ? 'border-blue-500 bg-blue-50 text-blue-800 ring-1 ring-blue-500'
-                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                              ? 'border-accent bg-accent-soft text-accent ring-1 ring-accent'
+                              : 'border-edge bg-raised text-ink hover:bg-surface-hover'
                           } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                         >
                           <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
@@ -673,25 +673,25 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
                 {/* Location */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">場所</label>
+                  <label className="block text-xs text-ink-muted mb-1">場所</label>
                   <input
                     type="text"
                     value={editLocation}
                     onChange={(e) => setEditLocation(e.target.value)}
                     placeholder="場所（任意）"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    className="w-full px-3 py-2 text-sm border border-edge rounded-lg focus:ring-2 focus:ring-accent focus:border-accent outline-none"
                   />
                 </div>
 
                 {/* Memo */}
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">メモ</label>
+                  <label className="block text-xs text-ink-muted mb-1">メモ</label>
                   <textarea
                     value={editMemo}
                     onChange={(e) => setEditMemo(e.target.value)}
                     rows={3}
                     placeholder="メモ（任意）"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y"
+                    className="w-full px-3 py-2 text-sm border border-edge rounded-lg focus:ring-2 focus:ring-accent focus:border-accent outline-none resize-y"
                   />
                 </div>
 
@@ -702,9 +702,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                       type="checkbox"
                       checked={syncToOutlook}
                       onChange={(e) => setSyncToOutlook(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      className="w-4 h-4 text-accent rounded border-edge focus:ring-accent"
                     />
-                    <span className="text-sm text-gray-700">
+                    <span className="text-sm text-ink">
                       {(isOutlook || event.outlookEventId) ? 'Outlookに反映' : 'Outlookに登録'}
                     </span>
                   </label>
@@ -721,10 +721,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     }
                     label="日時"
                   >
-                    <span className="text-sm text-gray-800">
+                    <span className="text-sm text-ink">
                       {eventDate}
                       {startTime && endTime && (
-                        <span className="text-gray-500 ml-2">{startTime} - {endTime}</span>
+                        <span className="text-ink-muted ml-2">{startTime} - {endTime}</span>
                       )}
                     </span>
                   </DetailRow>
@@ -743,8 +743,8 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         className="w-3 h-3 rounded-full flex-shrink-0"
                         style={{ backgroundColor: member.color }}
                       />
-                      <span className="text-sm text-gray-800">{member.nameJa}</span>
-                      <span className="text-xs text-gray-400">{member.email}</span>
+                      <span className="text-sm text-ink">{member.nameJa}</span>
+                      <span className="text-xs text-ink-faint">{member.email}</span>
                     </div>
                   </DetailRow>
                 )}
@@ -757,7 +757,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     }
                     label="場所"
                   >
-                    <span className="text-sm text-gray-800">{event.location || event.address}</span>
+                    <span className="text-sm text-ink">{event.location || event.address}</span>
                   </DetailRow>
                 )}
 
@@ -783,7 +783,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         }
                         label="取引先"
                       >
-                        <span className="text-sm text-gray-800">{event.accountName}</span>
+                        <span className="text-sm text-ink">{event.accountName}</span>
                       </DetailRow>
                     )}
 
@@ -794,7 +794,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         }
                         label="フェーズ"
                       >
-                        <span className="text-sm text-gray-800">{event.stage}</span>
+                        <span className="text-sm text-ink">{event.stage}</span>
                       </DetailRow>
                     )}
 
@@ -805,7 +805,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         }
                         label="メモ"
                       >
-                        <span className="text-sm text-gray-800">{event.scheduleMemo}</span>
+                        <span className="text-sm text-ink">{event.scheduleMemo}</span>
                       </DetailRow>
                     )}
                   </>
@@ -814,7 +814,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             )}
 
             {/* Actions */}
-            <div className="flex justify-between items-center gap-3 mt-6 pt-4 border-t border-gray-100">
+            <div className="flex justify-between items-center gap-3 mt-6 pt-4 border-t border-grid">
               {/* Left side: delete */}
               <div>
                 {(isManualAssignment || isOutlook) && !editMode && (
@@ -824,7 +824,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     className={`px-4 py-2 text-sm rounded-lg transition font-medium ${
                       deleteConfirm
                         ? 'text-white bg-red-600 hover:bg-red-700'
-                        : 'text-red-600 hover:bg-red-50'
+                        : 'text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/15'
                     } disabled:opacity-50`}
                   >
                     {deleteConfirm
@@ -839,7 +839,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     className={`px-4 py-2 text-sm rounded-lg transition font-medium ${
                       deleteConfirm
                         ? 'text-white bg-red-600 hover:bg-red-700'
-                        : 'text-red-600 hover:bg-red-50'
+                        : 'text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/15'
                     } disabled:opacity-50`}
                   >
                     {deleteConfirm
@@ -856,7 +856,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                     <button
                       onClick={handleCancelEdit}
                       disabled={saving}
-                      className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition disabled:opacity-50"
+                      className="px-4 py-2 text-sm text-ink-muted bg-canvas hover:bg-surface-hover rounded-lg transition disabled:opacity-50"
                     >
                       キャンセル
                     </button>
@@ -878,7 +878,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                   <>
                     <button
                       onClick={onClose}
-                      className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+                      className="px-4 py-2 text-sm text-ink-muted bg-canvas hover:bg-surface-hover rounded-lg transition"
                     >
                       閉じる
                     </button>
@@ -907,13 +907,13 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 function DetailRow({ icon, label, children }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="w-8 h-8 bg-canvas rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+        <svg className="w-4 h-4 text-ink-faint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           {icon}
         </svg>
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-gray-500 mb-0.5">{label}</p>
+        <p className="text-xs text-ink-muted mb-0.5">{label}</p>
         {children}
       </div>
     </div>

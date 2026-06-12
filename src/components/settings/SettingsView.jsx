@@ -172,34 +172,75 @@ export default function SettingsView() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 p-4">
-      <h1 className="text-2xl font-bold text-gray-800">設定</h1>
+      <h1 className="text-2xl font-bold text-ink">設定</h1>
+
+      {/* ===== Section 0: Display Theme ===== */}
+      <div className="bg-raised rounded-xl border border-edge p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-accent-soft rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-bold text-ink">表示テーマ</h3>
+            <p className="text-sm text-ink-muted">この端末のみに適用される表示設定です</p>
+          </div>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          {[
+            { value: 'light', label: 'ライト' },
+            { value: 'dark', label: 'ダーク' },
+            { value: 'system', label: 'システムに合わせる' },
+          ].map((opt) => (
+            <label
+              key={opt.value}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer text-sm transition ${
+                (settings.theme || 'light') === opt.value
+                  ? 'border-accent bg-accent-soft text-accent font-medium ring-1 ring-accent'
+                  : 'border-edge bg-surface text-ink-muted hover:bg-surface-hover'
+              }`}
+            >
+              <input
+                type="radio"
+                name="theme"
+                value={opt.value}
+                checked={(settings.theme || 'light') === opt.value}
+                onChange={() => dispatch({ type: 'UPDATE_SETTINGS', payload: { theme: opt.value } })}
+                className="sr-only"
+              />
+              {opt.label}
+            </label>
+          ))}
+        </div>
+      </div>
 
       {/* ===== Section 1: MS365 Integration ===== */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-raised rounded-xl border border-edge p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-10 h-10 bg-accent-soft rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
           <div>
-            <h3 className="font-bold text-gray-800">MS365連携</h3>
-            <p className="text-sm text-gray-500">Azure AD 設定・Outlook カレンダー同期</p>
+            <h3 className="font-bold text-ink">MS365連携</h3>
+            <p className="text-sm text-ink-muted">Azure AD 設定・Outlook カレンダー同期</p>
           </div>
           <div className="ml-auto">
             {isAuthenticated ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
                 接続済み
               </span>
             ) : isConfigured ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-300">
                 <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full" />
                 未接続
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-canvas text-ink-muted">
+                <span className="w-1.5 h-1.5 bg-ink-faint rounded-full" />
                 未設定
               </span>
             )}
@@ -208,8 +249,8 @@ export default function SettingsView() {
 
         {/* Connected account info */}
         {isAuthenticated && account && (
-          <div className="mb-4 flex items-center justify-between text-sm bg-green-50 rounded-lg px-3 py-2">
-            <div className="flex items-center gap-2 text-green-700">
+          <div className="mb-4 flex items-center justify-between text-sm bg-green-50 dark:bg-green-500/15 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -227,7 +268,7 @@ export default function SettingsView() {
         {/* Config input fields */}
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink mb-1">
               Client ID (アプリケーション ID)
             </label>
             <input
@@ -235,11 +276,11 @@ export default function SettingsView() {
               value={clientId}
               onChange={(e) => { setClientId(e.target.value); setAzureSaveMsg(''); }}
               placeholder={DEFAULT_AZURE_CONFIG.clientId}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+              className="w-full px-3 py-2 border border-edge rounded-lg text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent font-mono"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink mb-1">
               Tenant ID (テナント ID)
             </label>
             <input
@@ -247,7 +288,7 @@ export default function SettingsView() {
               value={tenantId}
               onChange={(e) => { setTenantId(e.target.value); setAzureSaveMsg(''); }}
               placeholder={DEFAULT_AZURE_CONFIG.tenantId}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+              className="w-full px-3 py-2 border border-edge rounded-lg text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent font-mono"
             />
           </div>
 
@@ -264,7 +305,7 @@ export default function SettingsView() {
               <button
                 onClick={handleTestConnection}
                 disabled={connectingTest || authLoading}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-accent bg-accent-soft rounded-lg hover:bg-surface-hover transition-colors disabled:opacity-50"
               >
                 {connectingTest || authLoading ? (
                   <>
@@ -286,50 +327,50 @@ export default function SettingsView() {
           </div>
         </div>
 
-        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-          <p className="text-xs text-gray-500">
-            必要な権限: <span className="font-mono text-blue-600">Calendars.ReadWrite</span>, <span className="font-mono text-blue-600">Calendars.ReadWrite.Shared</span>, <span className="font-mono text-blue-600">User.Read</span>
+        <div className="mt-4 p-3 bg-canvas rounded-lg">
+          <p className="text-xs text-ink-muted">
+            必要な権限: <span className="font-mono text-accent">Calendars.ReadWrite</span>, <span className="font-mono text-accent">Calendars.ReadWrite.Shared</span>, <span className="font-mono text-accent">User.Read</span>
           </p>
         </div>
       </div>
 
 
       {/* ===== Section 3: Salesforce Sync ===== */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-raised rounded-xl border border-edge p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-            <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-500/20 rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </div>
           <div>
-            <h3 className="font-bold text-gray-800">Salesforce同期</h3>
-            <p className="text-sm text-gray-500">商談データの同期状況</p>
+            <h3 className="font-bold text-ink">Salesforce同期</h3>
+            <p className="text-sm text-ink-muted">商談データの同期状況</p>
           </div>
         </div>
 
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500">最終同期日</p>
-              <p className="text-sm font-medium text-gray-800 mt-0.5">
+            <div className="bg-canvas rounded-lg p-3">
+              <p className="text-xs text-ink-muted">最終同期日</p>
+              <p className="text-sm font-medium text-ink mt-0.5">
                 {lastSfSync ? new Date(lastSfSync).toLocaleString('ja-JP') : '未同期'}
               </p>
             </div>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500">商談件数</p>
-              <p className="text-sm font-medium text-gray-800 mt-0.5">
+            <div className="bg-canvas rounded-lg p-3">
+              <p className="text-xs text-ink-muted">商談件数</p>
+              <p className="text-sm font-medium text-ink mt-0.5">
                 {sfOpportunities.length} 件
               </p>
             </div>
           </div>
 
-          <div className="p-3 bg-indigo-50 rounded-lg">
-            <p className="text-xs text-indigo-700 font-medium mb-1">同期方法</p>
-            <p className="text-xs text-indigo-600">
+          <div className="p-3 bg-indigo-50 dark:bg-indigo-500/15 rounded-lg">
+            <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium mb-1">同期方法</p>
+            <p className="text-xs text-indigo-600 dark:text-indigo-300">
               ターミナルで以下のコマンドを実行してください:
             </p>
-            <code className="block mt-1 text-xs bg-white text-gray-800 px-2 py-1.5 rounded border border-indigo-200 font-mono">
+            <code className="block mt-1 text-xs bg-raised text-ink px-2 py-1.5 rounded border border-indigo-200 dark:border-indigo-500/30 font-mono">
               npm run sync-sf
             </code>
           </div>
@@ -337,24 +378,24 @@ export default function SettingsView() {
       </div>
 
       {/* ===== Section 4: Data Management ===== */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-raised rounded-xl border border-edge p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
-            <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-10 h-10 bg-amber-100 dark:bg-amber-500/20 rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-amber-600 dark:text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
             </svg>
           </div>
           <div>
-            <h3 className="font-bold text-gray-800">データ管理</h3>
-            <p className="text-sm text-gray-500">割り当てデータのエクスポート・インポート・リセット</p>
+            <h3 className="font-bold text-ink">データ管理</h3>
+            <p className="text-sm text-ink-muted">割り当てデータのエクスポート・インポート・リセット</p>
           </div>
         </div>
 
         <div className="space-y-3">
           {/* Current data info */}
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-xs text-gray-500">現在の割り当て件数</p>
-            <p className="text-sm font-medium text-gray-800 mt-0.5">{assignments.length} 件</p>
+          <div className="bg-canvas rounded-lg p-3">
+            <p className="text-xs text-ink-muted">現在の割り当て件数</p>
+            <p className="text-sm font-medium text-ink mt-0.5">{assignments.length} 件</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -362,7 +403,7 @@ export default function SettingsView() {
             <button
               onClick={handleExportJson}
               disabled={assignments.length === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-ink bg-canvas rounded-lg hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -373,7 +414,7 @@ export default function SettingsView() {
             {/* Import button */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-ink bg-canvas rounded-lg hover:bg-surface-hover transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -394,7 +435,7 @@ export default function SettingsView() {
               className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 confirmReset
                   ? 'text-white bg-red-600 hover:bg-red-700'
-                  : 'text-red-600 bg-red-50 hover:bg-red-100'
+                  : 'text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-500/15 dark:text-red-300 dark:hover:bg-red-500/25'
               }`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

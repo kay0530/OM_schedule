@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { MEMBERS } from '../../data/members';
+import { MEMBERS, MEMBER_ORDER } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useCalendar } from '../../context/CalendarContext';
 import { toISODate, getDayNameJa } from '../../utils/dateUtils';
@@ -89,29 +89,34 @@ function groupByWeek(dates) {
  * Monthly calendar view — Excel-style grid showing all members across weeks.
  */
 export default function MonthlyView({ navigate, currentDate, onDropJob, onEventClick }) {
-  const { assignments, settings } = useApp();
+  const { assignments, settings, dispatch } = useApp();
   const { events } = useCalendar();
   const showWeekends = settings?.showWeekends ?? false;
   const [dragOverCell, setDragOverCell] = useState(null);
 
-  // Member visibility filter
-  const [visibleMembers, setVisibleMembers] = useState(() => new Set(MEMBERS.map(m => m.id)));
+  // Member visibility filter (shared via settings.hiddenMemberIds)
+  const hiddenMemberIds = settings?.hiddenMemberIds ?? [];
 
   function toggleMember(memberId) {
-    setVisibleMembers((prev) => {
-      const next = new Set(prev);
-      if (next.has(memberId)) next.delete(memberId);
-      else next.add(memberId);
-      return next;
+    dispatch({
+      type: 'UPDATE_SETTINGS',
+      payload: {
+        hiddenMemberIds: hiddenMemberIds.includes(memberId)
+          ? hiddenMemberIds.filter((id) => id !== memberId)
+          : [...hiddenMemberIds, memberId],
+      },
     });
   }
 
   function toggleAllMembers() {
-    if (visibleMembers.size === MEMBERS.length) setVisibleMembers(new Set());
-    else setVisibleMembers(new Set(MEMBERS.map(m => m.id)));
+    if (hiddenMemberIds.length === 0) {
+      dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: [...MEMBER_ORDER] } });
+    } else {
+      dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: [] } });
+    }
   }
 
-  const filteredMembers = useMemo(() => MEMBERS.filter(m => visibleMembers.has(m.id)), [visibleMembers]);
+  const filteredMembers = useMemo(() => MEMBERS.filter(m => !hiddenMemberIds.includes(m.id)), [hiddenMemberIds]);
 
   function handleCellDragOver(e, dateStr, memberId) {
     e.preventDefault();
@@ -244,7 +249,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
         items.push(
           <div
             key={ev.id}
-            className="px-1 py-0.5 text-xs text-gray-600 truncate cursor-pointer hover:opacity-80"
+            className="px-1 py-0.5 text-xs text-ink-muted truncate cursor-pointer hover:opacity-80"
             title={title}
             onClick={(e) => {
               e.stopPropagation();
@@ -267,7 +272,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
         <div className="space-y-0.5 overflow-hidden">
           {visible}
           {remaining > 0 && (
-            <div className="text-[10px] text-gray-400 text-center">
+            <div className="text-[10px] text-ink-faint text-center">
               +{remaining}件
             </div>
           )}
@@ -281,28 +286,28 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
     <div className="p-2">
       {/* Month header */}
       <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-lg font-bold text-gray-800">{monthLabel}</h2>
-        <span className="text-sm text-gray-500">月間スケジュール</span>
+        <h2 className="text-lg font-bold text-ink">{monthLabel}</h2>
+        <span className="text-sm text-ink-muted">月間スケジュール</span>
       </div>
 
       {/* Member filter chips */}
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
         <button
           onClick={toggleAllMembers}
-          className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100 transition-colors"
+          className="text-xs px-2 py-1 rounded border border-edge hover:bg-surface-hover transition-colors"
         >
-          {visibleMembers.size === MEMBERS.length ? '全解除' : '全選択'}
+          {hiddenMemberIds.length === 0 ? '全解除' : '全選択'}
         </button>
-        {filteredMembers.map((member) => (
+        {MEMBERS.map((member) => (
           <label key={member.id} className="inline-flex items-center gap-1 cursor-pointer">
-            <input type="checkbox" checked={visibleMembers.has(member.id)} onChange={() => toggleMember(member.id)} className="sr-only" />
+            <input type="checkbox" checked={!hiddenMemberIds.includes(member.id)} onChange={() => toggleMember(member.id)} className="sr-only" />
             <span
               className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-all ${
-                visibleMembers.has(member.id) ? 'border-transparent text-white' : 'border-gray-300 text-gray-400 bg-white'
+                !hiddenMemberIds.includes(member.id) ? 'border-transparent text-white' : 'border-edge text-ink-faint bg-surface'
               }`}
-              style={visibleMembers.has(member.id) ? { backgroundColor: member.color } : {}}
+              style={!hiddenMemberIds.includes(member.id) ? { backgroundColor: member.color } : {}}
             >
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: visibleMembers.has(member.id) ? 'white' : member.color }} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: !hiddenMemberIds.includes(member.id) ? 'white' : member.color }} />
               {member.nameJa}
             </span>
           </label>
@@ -310,18 +315,18 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
       </div>
 
       {/* Scrollable table container */}
-      <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm">
+      <div className="overflow-x-auto border border-edge rounded-lg shadow-sm">
         <table className="w-full border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
           {/* Header row with member names */}
           <thead className="sticky top-0 z-10">
-            <tr className="bg-gray-50">
-              <th className="border border-gray-200 px-1 py-2 text-left font-medium text-gray-600" style={{ width: '50px' }}>
+            <tr className="bg-raised">
+              <th className="border border-edge px-1 py-2 text-left font-medium text-ink-muted" style={{ width: '50px' }}>
                 日付
               </th>
               {filteredMembers.map((member) => (
                 <th
                   key={member.id}
-                  className="border border-gray-200 px-1 py-2 text-center font-medium"
+                  className="border border-edge px-1 py-2 text-center font-medium"
                   style={{
                     borderTop: `3px solid ${member.color}`,
                     color: member.color,
@@ -330,7 +335,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
                   <div className="truncate">
                     {member.nameJa}
                     {member.role === 'preparation' && (
-                      <span className="text-gray-400 text-[10px] block">(準備)</span>
+                      <span className="text-ink-faint text-[10px] block">(準備)</span>
                     )}
                   </div>
                 </th>
@@ -345,16 +350,16 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
                 <Fragment key={week.key} weekIdx={weekIdx}>
                   {/* Week header row */}
                   <tr
-                    className="bg-gray-100 hover:bg-gray-200 cursor-pointer transition-colors"
+                    className="bg-canvas hover:bg-surface-hover cursor-pointer transition-colors"
                     onClick={() => handleWeekClick(week.weekStart)}
                     title="クリックで週間ビューへ"
                   >
                     <td
                       colSpan={filteredMembers.length + 1}
-                      className="border border-gray-200 px-3 py-1.5 font-semibold text-gray-700 text-xs"
+                      className="border border-edge px-3 py-1.5 font-semibold text-ink text-xs"
                     >
                       <span className="inline-flex items-center gap-1">
-                        <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3 h-3 text-ink-faint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                         Week {weekIdx + 1} — {weekLabel}
@@ -368,17 +373,17 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
                     const dayName = getDayNameJa(date);
                     const isToday = toISODate(new Date()) === dateStr;
                     const rowBg = isToday
-                      ? 'bg-blue-50'
+                      ? 'bg-accent-soft'
                       : dayIdx % 2 === 0
-                        ? 'bg-white'
-                        : 'bg-gray-50/50';
+                        ? 'bg-surface'
+                        : 'bg-weekend';
 
                     return (
-                      <tr key={dateStr} className={`${rowBg} hover:bg-blue-50/50 transition-colors`}>
+                      <tr key={dateStr} className={`${rowBg} hover:bg-today transition-colors`}>
                         {/* Date label cell */}
                         <td
-                          className={`border border-gray-200 px-2 py-1 text-xs font-medium whitespace-nowrap ${
-                            isToday ? 'text-blue-600 font-bold' : 'text-gray-700'
+                          className={`border border-edge px-2 py-1 text-xs font-medium whitespace-nowrap ${
+                            isToday ? 'text-accent font-bold' : 'text-ink'
                           }`}
                         >
                           {date.getDate()} {dayName}
@@ -391,8 +396,8 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
                           return (
                             <td
                               key={member.id}
-                              className={`border border-gray-200 px-1 py-0.5 align-top transition-colors overflow-hidden ${
-                                isDragOver ? 'bg-blue-100 ring-1 ring-inset ring-blue-400' : ''
+                              className={`border border-edge px-1 py-0.5 align-top transition-colors overflow-hidden ${
+                                isDragOver ? 'bg-drop ring-1 ring-inset ring-accent' : ''
                               }`}
                               onClick={() => handleWeekClick(getWeekMonday(date))}
                               onDragOver={(e) => handleCellDragOver(e, dateStr, member.id)}
@@ -415,7 +420,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
       </div>
 
       {/* Legend */}
-      <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-ink-muted">
         {STATUS_TYPES.map((st) => (
           <div key={st.id} className="flex items-center gap-1">
             <span
@@ -426,7 +431,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
           </div>
         ))}
         <div className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded bg-blue-50 border border-blue-300" />
+          <span className="inline-block w-3 h-3 rounded bg-accent-soft border border-accent" />
           <span>今日</span>
         </div>
       </div>

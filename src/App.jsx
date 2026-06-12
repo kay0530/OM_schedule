@@ -13,6 +13,7 @@ import AssignModal from './components/schedule/AssignModal';
 import EventDetailModal from './components/schedule/EventDetailModal';
 import QuickAddModal from './components/schedule/QuickAddModal';
 import LoginGate from './components/auth/LoginGate';
+import ThemeApplier from './components/shared/ThemeApplier';
 
 function AuthenticatedApp() {
   const { isAuthenticated, loading } = useAuth();
@@ -22,6 +23,7 @@ function AuthenticatedApp() {
   return (
     <CalendarProvider>
       <AppProvider>
+        <ThemeApplier />
         <AppInner />
       </AppProvider>
     </CalendarProvider>
