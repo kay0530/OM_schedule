@@ -52,7 +52,7 @@ function detectStatusType(title) {
  * Shows days of the week as columns, 30-minute time slots as rows,
  * with member filter chips and events positioned by time.
  */
-export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, activeEventId, onSlotClick, onSlotDoubleClick }) {
+export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, activeEventId, onSlotClick, onSlotDoubleClick, selectedSlotKey }) {
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
 
@@ -723,11 +723,12 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                               {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => {
                                 const cellKey = `${toISODate(date)}-${member.id}-${hour}`;
                                 const isDragOver = dragOverCell === cellKey;
+                                const isSelectedSlot = selectedSlotKey === cellKey;
                                 return (
                                   <div
                                     key={hour}
                                     className={`border-b border-grid relative transition-colors ${
-                                      isDragOver ? 'bg-drop ring-1 ring-inset ring-accent' : ''
+                                      isDragOver ? 'bg-drop ring-1 ring-inset ring-accent' : isSelectedSlot ? 'bg-accent-soft ring-2 ring-inset ring-accent' : ''
                                     }`}
                                     style={{ height: `${HOUR_HEIGHT}px` }}
                                     onClick={() => handleSlotSingleClick(date, hour, 0, member.id)}
@@ -961,11 +962,12 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                             {Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i).map((hour) => {
                               const cellKey = `${toISODate(date)}-${member.id}-${hour}`;
                               const isDragOver = dragOverCell === cellKey;
+                                const isSelectedSlot = selectedSlotKey === cellKey;
                               return (
                                 <div
                                   key={hour}
                                   className={`border-b border-grid relative transition-colors ${
-                                    isDragOver ? 'bg-drop ring-1 ring-inset ring-accent' : ''
+                                    isDragOver ? 'bg-drop ring-1 ring-inset ring-accent' : isSelectedSlot ? 'bg-accent-soft ring-2 ring-inset ring-accent' : ''
                                   }`}
                                   style={{ height: `${HOUR_HEIGHT}px` }}
                                   onClick={() => handleSlotSingleClick(date, hour, 0, member.id)}

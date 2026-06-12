@@ -94,8 +94,10 @@ function AppInner() {
   // Active (selected) event for copy-paste
   const [activeEvent, setActiveEvent] = useState(null);
   const [copiedEvent, setCopiedEvent] = useState(null);
-  // True only after Ctrl+V: the user has explicitly armed paste-on-click.
-  // Without this, a stray click on the calendar would paste unintentionally.
+  // Last-clicked empty slot — the paste destination for Ctrl+V
+  // (Excel/Outlook model: click target cell first, then Ctrl+V pastes there)
+  const [selectedSlot, setSelectedSlot] = useState(null); // {date, time, memberId}
+  // Fallback flow: Ctrl+V pressed with no slot selected arms paste-on-click
   const [pasteArmed, setPasteArmed] = useState(false);
 
   function navigate(view, params = {}) {
@@ -114,6 +116,45 @@ function AppInner() {
     }
   }
 
+  // Paste the copied event at the given slot
+  function pasteAt(date, time, memberId) {
+    if (!copiedEvent) return;
+    const isAllDayCopy = !!copiedEvent.isAllDay;
+    let newStartTime;
+    let newEndTime;
+    if (isAllDayCopy) {
+      // All-day: preserve 終日 nature regardless of clicked time
+      newStartTime = '00:00';
+      newEndTime = '24:00';
+    } else {
+      const startMinutes = parseInt(time.substring(0, 2)) * 60 + parseInt(time.substring(3, 5));
+      const origStart = (parseInt(copiedEvent.startTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.startTime?.substring(3, 5) || '0');
+      const origEnd = (parseInt(copiedEvent.endTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.endTime?.substring(3, 5) || '0');
+      const duration = origEnd - origStart;
+      const newEndMinutes = Math.min(startMinutes + duration, 24 * 60);
+      newStartTime = time;
+      newEndTime = `${String(Math.floor(newEndMinutes / 60)).padStart(2, '0')}:${String(newEndMinutes % 60).padStart(2, '0')}`;
+    }
+
+    dispatch({
+      type: 'ADD_ASSIGNMENT',
+      payload: {
+        ...copiedEvent,
+        id: undefined,
+        memberId,
+        date,
+        startTime: newStartTime,
+        endTime: newEndTime,
+        isAllDay: isAllDayCopy,
+        // Reset Outlook linkage — paste creates a brand new draft
+        outlookEventId: null,
+        groupId: null,
+      },
+    });
+    setPasteArmed(false);
+    setSelectedSlot(null);
+  }
+
   // Called when a slot is clicked in WeeklyView (single click)
   function handleSlotClick(date, time, memberId) {
     if (pickedJob) {
@@ -125,44 +166,13 @@ function AppInner() {
       setPickedJob(null);
       return;
     }
-    // Paste copied event to this slot — only if user explicitly pressed Ctrl+V
+    // Armed paste-on-click (fallback flow: Ctrl+V pressed before choosing a slot)
     if (copiedEvent && pasteArmed) {
-      const isAllDayCopy = !!copiedEvent.isAllDay;
-      let newStartTime;
-      let newEndTime;
-      if (isAllDayCopy) {
-        // All-day: preserve 終日 nature regardless of clicked time
-        newStartTime = '00:00';
-        newEndTime = '24:00';
-      } else {
-        const startMinutes = parseInt(time.substring(0, 2)) * 60 + parseInt(time.substring(3, 5));
-        const origStart = (parseInt(copiedEvent.startTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.startTime?.substring(3, 5) || '0');
-        const origEnd = (parseInt(copiedEvent.endTime?.substring(0, 2) || '0') * 60) + parseInt(copiedEvent.endTime?.substring(3, 5) || '0');
-        const duration = origEnd - origStart;
-        const newEndMinutes = Math.min(startMinutes + duration, 24 * 60);
-        newStartTime = time;
-        newEndTime = `${String(Math.floor(newEndMinutes / 60)).padStart(2, '0')}:${String(newEndMinutes % 60).padStart(2, '0')}`;
-      }
-
-      dispatch({
-        type: 'ADD_ASSIGNMENT',
-        payload: {
-          ...copiedEvent,
-          id: undefined,
-          memberId,
-          date,
-          startTime: newStartTime,
-          endTime: newEndTime,
-          isAllDay: isAllDayCopy,
-          // Reset Outlook linkage — paste creates a brand new draft
-          outlookEventId: null,
-          groupId: null,
-        },
-      });
-      setPasteArmed(false); // single-shot paste
+      pasteAt(date, time, memberId);
       return;
     }
-    // Deselect active event when clicking empty slot
+    // Remember the clicked slot as the paste destination & deselect event
+    setSelectedSlot({ date, time, memberId });
     setActiveEvent(null);
   }
 
@@ -221,6 +231,7 @@ function AppInner() {
       else if (pasteArmed) setPasteArmed(false);
       else if (copiedEvent) setCopiedEvent(null);
       else if (activeEvent) setActiveEvent(null);
+      else if (selectedSlot) setSelectedSlot(null);
     }
     if (e.key === 'Delete' && activeEvent && activeEvent.opportunityName) {
       // Delete selected assignment (group-aware + Outlook-aware)
@@ -271,14 +282,23 @@ function AppInner() {
       setCopiedEvent(copyData);
       setPasteArmed(false); // arming requires explicit Ctrl+V
     }
-    // Ctrl+V: arm paste-on-click. Requires something to have been copied first.
+    // Ctrl+V: paste at the selected slot (Excel/Outlook model). If no slot is
+    // selected yet, arm paste-on-click so the next slot click pastes.
     if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedEvent) {
       e.preventDefault();
-      setPasteArmed(true);
+      if (selectedSlot) {
+        pasteAt(selectedSlot.date, selectedSlot.time, selectedSlot.memberId);
+      } else {
+        setPasteArmed(true);
+      }
     }
   }
 
   function renderView() {
+    // Same key format as the views' per-cell cellKey: `${date}-${memberId}-${hour}`
+    const selectedSlotKey = selectedSlot
+      ? `${selectedSlot.date}-${selectedSlot.memberId}-${parseInt(selectedSlot.time)}`
+      : null;
     const commonProps = {
       navigate,
       currentDate,
@@ -286,6 +306,7 @@ function AppInner() {
       onEventClick: handleEventClick,
       onEventDoubleClick: handleEventDoubleClick,
       activeEventId: activeEvent?.id || null,
+      selectedSlotKey,
     };
     switch (activeView) {
       case 'monthly':
@@ -319,7 +340,7 @@ function AppInner() {
           onClick={() => setCopiedEvent(null)}
           title="クリックでクリップボードをクリア"
         >
-          📋 「{copiedEvent.opportunityName}」をコピー済み — <span className="bg-white/20 px-2 py-0.5 rounded mx-1">Ctrl + V</span> で貼り付けモードに （クリック/Escでクリア）
+          📋 「{copiedEvent.opportunityName}」をコピー済み — 貼り付け先のマスをクリックして <span className="bg-white/20 px-2 py-0.5 rounded mx-1">Ctrl + V</span> （クリック/Escでクリア）
         </div>
       )}
       {copiedEvent && !pickedJob && pasteArmed && (

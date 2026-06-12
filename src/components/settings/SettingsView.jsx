@@ -407,7 +407,7 @@ export default function SettingsView() {
               <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">{githubTokenMsg}</p>
             )}
             <p className="text-xs text-ink-faint mt-1">
-              この端末のみに保存されます。リポジトリ OM_schedule に対して Actions: Read and write 権限を持つ Fine-grained PAT を管理者から受け取って入力してください。空欄で保存すると削除されます。
+              この端末のみに保存されます。<strong>自分のGitHubアカウント</strong>で発行した Fine-grained PAT（OM_schedule リポジトリ / Actions: Read and write）を入力してください。トークンは個人の認証情報のため他の人と共有しないでください（リポジトリのコラボレーター権限が必要です。未設定でも30分ごとの自動同期は動作します）。空欄で保存すると削除されます。
             </p>
           </div>
         </div>
