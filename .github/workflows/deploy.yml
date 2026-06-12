@@ -1,13 +1,11 @@
 name: Deploy to GitHub Pages
 
+# SF data is delivered via Firestore, so syncs no longer require a rebuild —
+# deploy only on code changes.
 on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Sync Salesforce Data"]
-    types: [completed]
-    branches: [main]
 
 permissions:
   contents: read
