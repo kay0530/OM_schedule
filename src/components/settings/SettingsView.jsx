@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { loadAzureConfig, saveAzureConfig, DEFAULT_AZURE_CONFIG } from '../../services/msalService';
+import { getGithubToken, saveGithubToken } from '../../services/githubSyncService';
 
 /**
  * Generate time options at 30-minute intervals.
@@ -39,6 +40,16 @@ export default function SettingsView() {
   const [workEnd, setWorkEnd] = useState(settings.workingHours?.end || '18:00');
   const [showWeekends, setShowWeekends] = useState(settings.showWeekends ?? false);
   const [hoursSaveMsg, setHoursSaveMsg] = useState('');
+
+  // --- GitHub token for manual SF sync (per-device, localStorage) ---
+  const [githubToken, setGithubTokenInput] = useState(() => getGithubToken());
+  const [githubTokenMsg, setGithubTokenMsg] = useState('');
+
+  function handleSaveGithubToken() {
+    saveGithubToken(githubToken);
+    setGithubTokenMsg(githubToken.trim() ? 'トークンを保存しました（この端末のみ）' : 'トークンを削除しました');
+    setTimeout(() => setGithubTokenMsg(''), 4000);
+  }
 
   // --- Import file ref ---
   const fileInputRef = useRef(null);
@@ -368,11 +379,36 @@ export default function SettingsView() {
           <div className="p-3 bg-indigo-50 dark:bg-indigo-500/15 rounded-lg">
             <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium mb-1">同期方法</p>
             <p className="text-xs text-indigo-600 dark:text-indigo-300">
-              ターミナルで以下のコマンドを実行してください:
+              30分ごとに自動同期されます。すぐに同期したい場合は、下のGitHubトークンを設定すると案件一覧パネルの🔄ボタンから手動同期できます。
             </p>
-            <code className="block mt-1 text-xs bg-raised text-ink px-2 py-1.5 rounded border border-indigo-200 dark:border-indigo-500/30 font-mono">
-              npm run sync-sf
-            </code>
+          </div>
+
+          {/* GitHub token for manual sync */}
+          <div>
+            <label className="block text-sm font-medium text-ink mb-1">
+              GitHubトークン（手動同期用・任意）
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={githubToken}
+                onChange={(e) => setGithubTokenInput(e.target.value)}
+                placeholder="github_pat_..."
+                className="flex-1 px-3 py-2 border border-edge rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent font-mono text-ink"
+              />
+              <button
+                onClick={handleSaveGithubToken}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                保存
+              </button>
+            </div>
+            {githubTokenMsg && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">{githubTokenMsg}</p>
+            )}
+            <p className="text-xs text-ink-faint mt-1">
+              この端末のみに保存されます。リポジトリ OM_schedule に対して Actions: Read and write 権限を持つ Fine-grained PAT を管理者から受け取って入力してください。空欄で保存すると削除されます。
+            </p>
           </div>
         </div>
       </div>

@@ -5,6 +5,7 @@ import maintenances from '../../data/maintenances.json';
 import syncMeta from '../../data/sync-meta.json';
 import JobCard, { STAGE_COLORS, MAINT_STATUS_COLORS } from './JobCard';
 import { isFirestoreEnabled, saveFilterPresets, loadFilterPresets, subscribeFilterPresets } from '../../services/firestoreService';
+import { getGithubToken, triggerSfSync } from '../../services/githubSyncService';
 
 /**
  * Sidebar panel listing Salesforce records.
@@ -78,6 +79,35 @@ const TABS = [
 
 export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle }) {
   const collapsed = !isOpen;
+
+  // Manual SF sync (GitHub Actions workflow_dispatch)
+  const [sfSyncing, setSfSyncing] = useState(false);
+  const [sfSyncStatus, setSfSyncStatus] = useState('');
+
+  async function handleSfSync() {
+    if (sfSyncing) return;
+    const token = getGithubToken();
+    if (!token) {
+      alert('手動同期にはGitHubトークンが必要です。\n設定画面の「Salesforce同期」セクションでトークンを登録してください。\n（登録しなくても30分ごとに自動同期されます）');
+      return;
+    }
+    setSfSyncing(true);
+    try {
+      const result = await triggerSfSync(token, setSfSyncStatus);
+      if (result.deployed) {
+        if (confirm('Salesforce同期が完了しました。\nページを再読み込みして最新データを表示しますか？')) {
+          window.location.reload();
+        }
+      } else {
+        alert('Salesforce同期が完了しました。データに変更はありませんでした。');
+      }
+    } catch (err) {
+      alert(`Salesforce同期エラー: ${err.message}`);
+    } finally {
+      setSfSyncing(false);
+      setSfSyncStatus('');
+    }
+  }
 
   // Restore last filter from localStorage on initial render
   const lastFilter = useMemo(() => loadLastFilter(), []);
@@ -307,16 +337,42 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
             </span>
           )}
         </h2>
-        <button
-          onClick={() => onToggle()}
-          className="p-1 rounded hover:bg-surface-hover transition"
-          title="パネルを閉じる"
-        >
-          <svg className="w-4 h-4 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Manual SF sync (requires GitHub token configured in 設定) */}
+          <button
+            onClick={handleSfSync}
+            disabled={sfSyncing}
+            className={`p-1 rounded transition ${
+              sfSyncing ? 'text-accent cursor-wait' : 'hover:bg-surface-hover text-ink-muted'
+            }`}
+            title={sfSyncStatus || 'Salesforceから最新データを取得（要GitHubトークン設定）'}
+          >
+            <svg className={`w-4 h-4 ${sfSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onToggle()}
+            className="p-1 rounded hover:bg-surface-hover transition"
+            title="パネルを閉じる"
+          >
+            <svg className="w-4 h-4 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {/* SF sync progress banner */}
+      {sfSyncing && sfSyncStatus && (
+        <div className="px-4 py-1.5 text-[11px] text-accent bg-accent-soft border-b border-edge flex items-center gap-1.5">
+          <svg className="w-3 h-3 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          {sfSyncStatus}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-edge">
