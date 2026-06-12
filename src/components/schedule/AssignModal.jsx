@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { createCalendarEvent } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
+import { useModalDrag } from '../../hooks/useModalDrag';
 
 /**
  * Modal dialog for assigning a job (opportunity or maintenance) to member(s).
@@ -30,6 +31,7 @@ export default function AssignModal({
 }) {
   const { dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
+  const { dragOffset, handleDragHandleMouseDown, resetDrag } = useModalDrag();
 
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -60,7 +62,9 @@ export default function AssignModal({
       // Pre-fill memo from SF source (maintenance content or opportunity memo)
       const isMaint = opportunity.type === 'maintenance';
       setMemo(isMaint ? (opportunity.content || '') : (opportunity.scheduleMemo || ''));
+      resetDrag();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, opportunity, preselectedMember, preselectedDate, preselectedStartTime, preselectedEndTime]);
 
   if (!isOpen || !opportunity) return null;
@@ -197,13 +201,18 @@ export default function AssignModal({
       />
 
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div
-          className="bg-raised text-ink rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+          className="bg-raised text-ink rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
+          style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-edge">
+          {/* Header (drag to move) */}
+          <div
+            className="flex items-center justify-between px-6 py-4 border-b border-edge cursor-move select-none"
+            onMouseDown={handleDragHandleMouseDown}
+            title="ドラッグで移動"
+          >
             <h2 className="text-lg font-bold text-ink">
               {opportunity.type === 'maintenance' ? '点検／修繕 割り当て' : '工事割り当て'}
             </h2>

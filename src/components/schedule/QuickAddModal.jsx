@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { createCalendarEvent } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
+import { useModalDrag } from '../../hooks/useModalDrag';
 
 /**
  * Quick-add modal for creating a manual schedule entry via double-click.
@@ -21,6 +22,7 @@ for (let h = 0; h <= 24; h++) {
 export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime, presetMemberId, presetAllDay, presetIsDelivery }) {
   const { dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
+  const { dragOffset, handleDragHandleMouseDown, resetDrag } = useModalDrag();
 
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
@@ -49,7 +51,9 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
       setMemo('');
       setSyncOutlook(true);
       setSaving(false);
+      resetDrag();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, presetDate, presetTime, presetMemberId, presetAllDay, presetIsDelivery]);
 
   if (!isOpen) return null;
@@ -144,10 +148,18 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
   return (
     <>
       <div className="fixed inset-0 bg-black/40 dark:bg-black/60 z-50" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-raised text-ink rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-edge bg-orange-50 dark:bg-orange-500/10 rounded-t-xl">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div
+          className="bg-raised text-ink rounded-xl shadow-2xl w-full max-w-md pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+          style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
+        >
+          {/* Header (drag to move) */}
+          <div
+            className="flex items-center justify-between px-5 py-3 border-b border-edge bg-orange-50 dark:bg-orange-500/10 rounded-t-xl cursor-move select-none"
+            onMouseDown={handleDragHandleMouseDown}
+            title="ドラッグで移動"
+          >
             <h2 className="text-base font-bold text-ink">{isDelivery ? '納品予定を追加' : '予定を追加'}</h2>
             <button onClick={onClose} className="p-1 rounded-lg hover:bg-surface-hover">
               <svg className="w-5 h-5 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
