@@ -80,7 +80,10 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
   // IDs of Outlook events already represented by an assignment (dedupe)
   const linkedOutlookIds = useMemo(() => {
     const s = new Set();
-    for (const a of assignments) if (a.outlookEventId) s.add(a.outlookEventId);
+    for (const a of assignments) {
+      if (a.outlookEventId) s.add(a.outlookEventId);
+      if (a.googleEventId) s.add(a.googleEventId);
+    }
     return s;
   }, [assignments]);
 

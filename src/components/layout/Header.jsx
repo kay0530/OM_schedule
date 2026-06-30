@@ -20,8 +20,8 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
   const { isAuthenticated, account, loading, error, login, logout, getToken } = useAuth();
   const { events, lastSynced, loading: calLoading } = useCalendar();
   const { settings, dispatch } = useApp();
-  const { syncing, syncFromOutlook } = useCalendarSync();
-  const { isGoogleAuthenticated, googleLogin, googleLogout } = useGoogleAuth();
+  const { syncing, syncFromOutlook, syncFromGoogle } = useCalendarSync();
+  const { isGoogleAuthenticated, googleLogin, getGoogleToken } = useGoogleAuth();
 
   const theme = settings.theme || 'light';
   function cycleTheme() {
@@ -62,6 +62,37 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
       }
     } catch (err) {
       alert(`同期エラー: ${err.message}`);
+    }
+  }
+
+  // Sync events from member 瀬戸's Google Calendar (same range as the Outlook sync)
+  async function handleGoogleSync() {
+    if (syncing || !isGoogleAuthenticated) return;
+    try {
+      const token = await getGoogleToken();
+      if (!token) {
+        alert('Googleトークン取得に失敗しました。再連携してください。');
+        return;
+      }
+      const startDate = new Date(currentDate);
+      startDate.setDate(1);
+      startDate.setDate(startDate.getDate() - 14);
+      const endDate = new Date(currentDate);
+      endDate.setMonth(endDate.getMonth() + 1, 0);
+      endDate.setDate(endDate.getDate() + 14);
+
+      const googleMembers = MEMBERS.filter((m) => m.calendarProvider === 'google');
+      let total = 0;
+      for (const m of googleMembers) {
+        const result = await syncFromGoogle(token, m, startDate, endDate);
+        total += result.count || 0;
+        if (!result.success && result.error) {
+          alert(`Google同期: ${m.nameJa}さんでエラー: ${result.error}`);
+        }
+      }
+      alert(`Google同期完了: ${total}件のイベントを取得しました`);
+    } catch (err) {
+      alert(`Google同期エラー: ${err.message}`);
     }
   }
 
@@ -252,15 +283,22 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
                 ({events.length}件)
               </span>
             )}
-            {/* Google (member 瀬戸) connect / disconnect */}
+            {/* Google (member 瀬戸) sync / connect */}
             {isGoogleAuthenticated ? (
               <button
-                onClick={googleLogout}
-                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border border-green-500/40 text-green-600 dark:text-green-400 hover:bg-green-500/10 transition-colors"
-                title="Google連携を解除（瀬戸さん）"
+                onClick={handleGoogleSync}
+                disabled={syncing}
+                className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+                  syncing
+                    ? 'border-edge text-ink-faint cursor-not-allowed'
+                    : 'border-green-500/40 text-green-600 dark:text-green-400 hover:bg-green-500/10'
+                }`}
+                title="瀬戸さんのGoogleカレンダーを同期"
               >
-                <span className="w-2 h-2 bg-green-500 rounded-full" />
-                Google連携中
+                <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {syncing ? '同期中...' : 'Google同期'}
               </button>
             ) : (
               <button

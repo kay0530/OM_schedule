@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useCalendar } from '../context/CalendarContext';
 import { parseCalendarEvents } from '../services/calendarService';
 import { fetchAllMembersCalendarEvents } from '../services/graphCalendarService';
+import { fetchGoogleCalendarEvents } from '../services/googleCalendarService';
 import { toISODate } from '../utils/dateUtils';
 
 /**
@@ -15,7 +16,7 @@ import { toISODate } from '../utils/dateUtils';
  * - syncStatus: Object tracking sync progress
  */
 export function useCalendarSync() {
-  const { setEvents, addEvents, mergeEvents, setLoading, setSyncError } =
+  const { setEvents, addEvents, mergeEvents, mergeEventsForProvider, setLoading, setSyncError } =
     useCalendar();
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
@@ -183,6 +184,66 @@ export function useCalendarSync() {
   );
 
   /**
+   * Sync events from a member's Google Calendar (member 瀬戸).
+   * Replaces ONLY this member's events within the range (keeps Outlook events),
+   * sharing the same in-progress guard so Google and Outlook never run at once.
+   *
+   * @param {string} googleAccessToken - GIS access token from useGoogleAuth().getGoogleToken()
+   * @param {{id:string, email:string, googleCalendarId?:string}} member
+   * @param {string|Date} startDate
+   * @param {string|Date} endDate
+   * @returns {Promise<{success:boolean, count:number, error:string|null}>}
+   */
+  const syncFromGoogle = useCallback(
+    async (googleAccessToken, member, startDate, endDate) => {
+      if (syncInProgressRef.current) {
+        console.warn('[CalendarSync] Sync already in progress, skipping.');
+        return { success: false, count: 0, error: 'Sync already in progress' };
+      }
+
+      syncInProgressRef.current = true;
+      setSyncing(true);
+      setLoading(true);
+      setError(null);
+      setSyncError(null);
+
+      try {
+        const startStr = toISODate(new Date(startDate));
+        const endStr = toISODate(new Date(endDate));
+
+        const result = await fetchGoogleCalendarEvents(googleAccessToken, member, startStr, endStr);
+
+        // Replace only this member's events within the range; keep Outlook events.
+        mergeEventsForProvider(result.data, startStr, endStr, (e) => e.memberKey === member.id);
+
+        const now = new Date().toISOString();
+        setLastSync(now);
+
+        if (!result.success && result.error) {
+          setError(result.error);
+          setSyncError(result.error);
+        }
+
+        return {
+          success: result.success,
+          count: result.data.length,
+          error: result.success ? null : result.error,
+        };
+      } catch (err) {
+        const message = err.message || 'Google sync failed';
+        setError(message);
+        setSyncError(message);
+        return { success: false, count: 0, error: message };
+      } finally {
+        setSyncing(false);
+        setLoading(false);
+        syncInProgressRef.current = false;
+      }
+    },
+    [mergeEventsForProvider, setLoading, setSyncError]
+  );
+
+  /**
    * Auto-sync: try Graph API with token, start with empty events on failure.
    * Range: today -14 days to +42 days.
    *
@@ -286,6 +347,7 @@ export function useCalendarSync() {
     syncStatus,
     importCalendarData,
     syncFromOutlook,
+    syncFromGoogle,
     autoSync,
     fetchWeekData,
   };

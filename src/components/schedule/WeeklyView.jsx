@@ -155,6 +155,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     const s = new Set();
     for (const a of assignments) {
       if (a.outlookEventId) s.add(a.outlookEventId);
+      if (a.googleEventId) s.add(a.googleEventId);
     }
     return s;
   }, [assignments]);

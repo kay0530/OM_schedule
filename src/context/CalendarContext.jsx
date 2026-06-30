@@ -77,6 +77,24 @@ export function CalendarProvider({ children }) {
     setSyncError(null);
   }, []);
 
+  // Merge events for ONE provider/source: within the date range, replace only
+  // the events matching `predicate` (e.g. a single member), keeping every other
+  // event (other providers' events in the same range, and everything outside
+  // the range). Without this, a Google sync would wipe Outlook events that share
+  // the synced date window.
+  const mergeEventsForProvider = useCallback((newEvents, startDate, endDate, predicate) => {
+    setEventsState((prev) => {
+      const kept = prev.filter((e) => {
+        const d = e.start.substring(0, 10);
+        const inRange = d >= startDate && d <= endDate;
+        return !inRange || !predicate(e);
+      });
+      return [...kept, ...newEvents];
+    });
+    setLastSynced(new Date().toISOString());
+    setSyncError(null);
+  }, []);
+
   // Clear all events
   const clearEvents = useCallback(() => {
     setEventsState([]);
@@ -114,6 +132,7 @@ export function CalendarProvider({ children }) {
     setEvents,
     addEvents,
     mergeEvents,
+    mergeEventsForProvider,
     clearEvents,
     getEventsForMember,
     getEventsForDate,

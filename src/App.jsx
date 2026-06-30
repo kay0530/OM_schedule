@@ -56,8 +56,12 @@ function AppInner() {
     if (current.length === 0) return;
     const eventById = new Map(events.map((e) => [e.id, e]));
     for (const a of current) {
-      if (!a.outlookEventId) continue;
-      const oe = eventById.get(a.outlookEventId);
+      // Reconcile from whichever remote the assignment is linked to. Outlook and
+      // Google ids never collide, so one Map serves both; an assignment carries
+      // at most one of the two.
+      const remoteId = a.outlookEventId || a.googleEventId;
+      if (!remoteId) continue;
+      const oe = eventById.get(remoteId);
       if (!oe) continue;
       const newTitle = oe.title || '';
       const newDate = oe.start?.substring(0, 10) || a.date;
