@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useCalendar } from '../../context/CalendarContext';
 import { useApp } from '../../context/AppContext';
 import { useCalendarSync } from '../../hooks/useCalendarSync';
 import { MEMBERS } from '../../data/members';
 import { getWeekDates, formatDateShort } from '../../utils/dateUtils';
+import ReportExportModal from '../schedule/ReportExportModal';
 
 /**
  * Format a date as Japanese year-month string (e.g., "2026年4月")
@@ -20,6 +22,7 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
   const { events, lastSynced, loading: calLoading } = useCalendar();
   const { settings, dispatch } = useApp();
   const { syncing, syncFromOutlook } = useCalendarSync();
+  const [reportOpen, setReportOpen] = useState(false);
 
   const theme = settings.theme || 'light';
   function cycleTheme() {
@@ -92,6 +95,7 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
         : formatMonth(currentDate);
 
   return (
+    <>
     <header className={`h-14 bg-raised border-b border-edge flex items-center px-4 fixed ${bannerOffset ? 'top-10' : 'top-0'} left-0 right-0 z-30`}>
       {/* Mobile sidebar toggle */}
       <button
@@ -244,6 +248,17 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
               </svg>
               {syncing ? '同期中...' : 'Outlook同期'}
             </button>
+            {/* Activity report export */}
+            <button
+              onClick={() => setReportOpen(true)}
+              className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border border-edge text-ink-muted hover:bg-surface-hover hover:text-ink transition-colors"
+              title="活動報告をExcelで出力（管理部向け集計）"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              活動報告
+            </button>
             {/* Event count badge */}
             {events.length > 0 && (
               <span className="text-xs text-ink-faint" title={`${events.length}件のOutlookイベント`}>
@@ -270,5 +285,7 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
         )}
       </div>
     </header>
+    <ReportExportModal isOpen={reportOpen} onClose={() => setReportOpen(false)} />
+    </>
   );
 }

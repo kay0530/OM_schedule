@@ -2,6 +2,9 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 
 const SELECT_FIELDS = 'subject,start,end,isAllDay,showAs,location,organizer,attendees';
 
+/** Fields for the work-report export — includes the event body. */
+const REPORT_SELECT = 'subject,start,end,location,body';
+
 /** Map member emails to internal member keys */
 const MEMBER_EMAIL_MAP = {
   'norifumi.hiroki@altenergy.co.jp': 'hiroki_n',
@@ -121,6 +124,68 @@ export async function fetchMemberCalendarEvents(accessToken, memberEmail, startD
     return { success: true, data: allEvents, error: null };
   } catch (err) {
     console.error(`Failed to fetch calendar for ${memberEmail}:`, err);
+    return { success: false, data: [], error: err.message };
+  }
+}
+
+/**
+ * Authenticated GET that asks Graph to return event bodies as PLAIN TEXT
+ * (outlook.body-content-type="text"), so the work-report template can be parsed
+ * line-by-line without stripping HTML.
+ */
+async function graphGetTextBody(url, accessToken) {
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Prefer: 'outlook.timezone="Asia/Tokyo", outlook.body-content-type="text"',
+    },
+  });
+  if (!res.ok) {
+    const errorBody = await res.text();
+    throw new Error(`Graph API error ${res.status}: ${errorBody}`);
+  }
+  return res.json();
+}
+
+/**
+ * Fetch a member's calendar events WITH their plain-text body, for the
+ * work-report export. Kept separate from fetchMemberCalendarEvents (which omits
+ * the body to keep the regular sync light).
+ * @returns {Promise<{success:boolean, data:Array<{id,subject,start,end,location,bodyText,memberEmail}>, error:string|null}>}
+ */
+export async function fetchMemberEventsWithBody(accessToken, memberEmail, startDate, endDate) {
+  try {
+    const startDateTime = `${startDate}T00:00:00`;
+    const endDateTime = `${endDate}T23:59:59`;
+    const params = new URLSearchParams({
+      startDateTime,
+      endDateTime,
+      $select: REPORT_SELECT,
+      $top: '500',
+    });
+
+    let url = `${GRAPH_BASE_URL}/users/${memberEmail}/calendarView?${params}`;
+    const data = [];
+
+    while (url) {
+      const json = await graphGetTextBody(url, accessToken);
+      for (const e of json.value || []) {
+        data.push({
+          id: e.id,
+          subject: e.subject || '',
+          start: e.start?.dateTime || '',
+          end: e.end?.dateTime || '',
+          location: e.location?.displayName || '',
+          bodyText: e.body?.content || '',
+          memberEmail,
+        });
+      }
+      url = json['@odata.nextLink'] || null;
+    }
+
+    return { success: true, data, error: null };
+  } catch (err) {
+    console.error(`Failed to fetch report events for ${memberEmail}:`, err);
     return { success: false, data: [], error: err.message };
   }
 }
