@@ -2,9 +2,9 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CalendarProvider, useCalendar } from './context/CalendarContext';
 import { AppProvider, useApp } from './context/AppContext';
-import { GoogleAuthProvider } from './context/GoogleAuthContext';
+import { GoogleAuthProvider, useGoogleAuth } from './context/GoogleAuthContext';
 import { MEMBERS } from './data/members';
-import { deleteCalendarEvent } from './services/graphCalendarService';
+import { deleteRemoteEvent, remoteEventId, shouldWriteRemote } from './services/calendarWrite';
 import MainLayout from './components/layout/MainLayout';
 import MonthlyView from './components/schedule/MonthlyView';
 import WeeklyView from './components/schedule/WeeklyView';
@@ -40,6 +40,7 @@ function AppInner() {
   const { assignments, dispatch } = useApp();
   const { events } = useCalendar();
   const { isAuthenticated, getToken } = useAuth();
+  const { isGoogleAuthenticated, getGoogleToken } = useGoogleAuth();
 
   // Reconcile assignments with edits made on the Outlook side: when an
   // Outlook event matching an assignment's outlookEventId differs from the
@@ -156,8 +157,9 @@ function AppInner() {
         startTime: newStartTime,
         endTime: newEndTime,
         isAllDay: isAllDayCopy,
-        // Reset Outlook linkage — paste creates a brand new draft
+        // Reset remote linkage — paste creates a brand new draft
         outlookEventId: null,
+        googleEventId: null,
         groupId: null,
       },
     });
@@ -254,14 +256,15 @@ function AppInner() {
       if (confirm(label)) {
         // Best-effort Outlook delete in the background; local delete is immediate
         (async () => {
-          const token = isAuthenticated ? await getToken().catch(() => null) : null;
+          const tokens = {
+            outlook: isAuthenticated ? await getToken().catch(() => null) : null,
+            google: isGoogleAuthenticated ? await getGoogleToken().catch(() => null) : null,
+          };
           for (const t of targets) {
-            if (token && t.outlookEventId) {
-              const m = MEMBERS.find((mm) => mm.id === t.memberId);
-              const memberEmail = m?.email || t.memberEmail;
-              if (memberEmail && !m?.skipOutlookSync) {
-                try { await deleteCalendarEvent(token, memberEmail, t.outlookEventId); } catch { /* ignore */ }
-              }
+            const m = MEMBERS.find((mm) => mm.id === t.memberId) || { email: t.memberEmail };
+            const remoteId = remoteEventId(m, t);
+            if (remoteId && shouldWriteRemote(m)) {
+              try { await deleteRemoteEvent(m, tokens, remoteId); } catch { /* ignore */ }
             }
           }
         })();

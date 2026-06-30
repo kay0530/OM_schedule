@@ -38,9 +38,11 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
   const isAssignment = !!event.opportunityName;
   const isStatus = !!event.statusType;
   const isDraggable = isAssignment; // Only assignments are draggable
-  // For manual assignments, "synced to Outlook" = has an outlookEventId
-  const isSyncedToOutlook = isAssignment && !!event.outlookEventId;
-  const isDraftOnly = isAssignment && !event.outlookEventId;
+  // For manual assignments, "synced to a calendar" = has a remote event id
+  // (Outlook or Google).
+  const remoteEventId = event.outlookEventId || event.googleEventId;
+  const isSyncedToOutlook = isAssignment && !!remoteEventId;
+  const isDraftOnly = isAssignment && !remoteEventId;
 
   // Chip styling class (see index.css):
   //   event-solid   = Outlook-style member-colored fill + contrast text

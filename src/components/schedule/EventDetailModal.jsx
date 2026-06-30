@@ -2,8 +2,17 @@ import { useState, useEffect, useRef } from 'react';
 import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { useGoogleAuth } from '../../context/GoogleAuthContext';
 import { useCalendar } from '../../context/CalendarContext';
-import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../../services/graphCalendarService';
+import {
+  memberProvider,
+  shouldWriteRemote,
+  remoteEventId,
+  remoteIdField,
+  createRemoteEvent,
+  updateRemoteEvent,
+  deleteRemoteEvent,
+} from '../../services/calendarWrite';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 
 // Generate 30-minute interval options from 08:00 to 18:00
@@ -21,6 +30,7 @@ for (let h = 8; h <= 18; h++) {
 export default function EventDetailModal({ isOpen, onClose, event }) {
   const { assignments, dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
+  const { isGoogleAuthenticated, getGoogleToken } = useGoogleAuth();
   const { events, setEvents } = useCalendar();
 
   const [editMode, setEditMode] = useState(false);
@@ -274,7 +284,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           };
 
       const outlookErrors = [];
-      const token = (syncToOutlook && isAuthenticated) ? await getToken() : null;
+      const tokens = {
+        outlook: (syncToOutlook && isAuthenticated) ? await getToken().catch(() => null) : null,
+        google: (syncToOutlook && isGoogleAuthenticated) ? await getGoogleToken().catch(() => null) : null,
+      };
 
       if (isManualAssignment) {
         // Diff: which members stay, get added, get removed
@@ -298,18 +311,19 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           if (groupId && !a.groupId) updates.groupId = groupId;
           dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, ...updates } });
 
-          // Outlook update
-          if (token) {
+          // Remote update (Outlook or Google, per the member's provider)
+          if (syncToOutlook) {
             const m = MEMBERS.find((mm) => mm.id === a.memberId);
-            if (m && !m.skipOutlookSync) {
-              if (a.outlookEventId) {
-                const result = await updateCalendarEvent(token, m.email, a.outlookEventId, buildOutlookBody());
+            if (m && shouldWriteRemote(m)) {
+              const existingId = remoteEventId(m, a);
+              if (existingId) {
+                const result = await updateRemoteEvent(m, tokens, existingId, buildOutlookBody());
                 if (!result.success) outlookErrors.push(`${m.nameJa}: ${result.error}`);
               } else {
-                // No outlookEventId yet — create one
-                const result = await createCalendarEvent(token, m.email, buildOutlookBody());
+                // No remote id yet — create one
+                const result = await createRemoteEvent(m, tokens, buildOutlookBody());
                 if (result.success && result.data?.id) {
-                  dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, outlookEventId: result.data.id } });
+                  dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, [remoteIdField(m)]: result.data.id } });
                 } else if (!result.success) {
                   outlookErrors.push(`${m.nameJa}: ${result.error}`);
                 }
@@ -321,12 +335,13 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
         // 2) ADD newly selected members
         for (const memberId of addedMemberIds) {
           const m = MEMBERS.find((mm) => mm.id === memberId);
-          let outlookEventId = null;
-          if (token && m && !m.skipOutlookSync) {
-            const result = await createCalendarEvent(token, m.email, buildOutlookBody());
-            if (result.success) outlookEventId = result.data?.id || null;
+          let remoteId = null;
+          if (syncToOutlook && m && shouldWriteRemote(m)) {
+            const result = await createRemoteEvent(m, tokens, buildOutlookBody());
+            if (result.success) remoteId = result.data?.id || null;
             else outlookErrors.push(`${m?.nameJa || memberId}: ${result.error}`);
           }
+          const provider = memberProvider(m);
           dispatch({
             type: 'ADD_ASSIGNMENT',
             payload: {
@@ -348,7 +363,8 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
               syncOutlook: syncToOutlook,
               address: editLocation,
               scheduleMemo: editMemo,
-              outlookEventId,
+              outlookEventId: provider === 'outlook' ? remoteId : null,
+              googleEventId: provider === 'google' ? remoteId : null,
               groupId,
             },
           });
@@ -356,18 +372,20 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
         // 3) DELETE removed members
         for (const a of removedAssignments) {
-          if (token && a.outlookEventId) {
+          if (syncToOutlook) {
             const m = MEMBERS.find((mm) => mm.id === a.memberId);
-            if (m && !m.skipOutlookSync) {
-              const result = await deleteCalendarEvent(token, m.email, a.outlookEventId);
+            const remoteId = m ? remoteEventId(m, a) : null;
+            if (m && shouldWriteRemote(m) && remoteId) {
+              const result = await deleteRemoteEvent(m, tokens, remoteId);
               if (!result.success) outlookErrors.push(`${m.nameJa}: ${result.error}`);
             }
           }
           dispatch({ type: 'DELETE_ASSIGNMENT', payload: a.id });
         }
-      } else if (isOutlook && token) {
-        // Pure Outlook event — update only this one
-        const result = await updateCalendarEvent(token, event.memberEmail, event.id, buildOutlookBody());
+      } else if (isOutlook && syncToOutlook) {
+        // Pure remote event (not an assignment) — update only this one
+        const evMember = MEMBERS.find((m) => (m.email || '').toLowerCase() === (event.memberEmail || '').toLowerCase()) || { email: event.memberEmail };
+        const result = await updateRemoteEvent(evMember, tokens, event.id, buildOutlookBody());
         if (!result.success) {
           outlookErrors.push(`${event.memberEmail}: ${result.error}`);
         } else {
@@ -382,7 +400,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       }
 
       if (outlookErrors.length > 0) {
-        setError(`Outlook同期エラー:\n${outlookErrors.join('\n')}`);
+        setError(`カレンダー同期エラー:\n${outlookErrors.join('\n')}`);
         setSaving(false);
         return;
       }
@@ -407,7 +425,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
     try {
       const outlookErrors = [];
-      const token = isAuthenticated ? await getToken() : null;
+      const tokens = {
+        outlook: isAuthenticated ? await getToken().catch(() => null) : null,
+        google: isGoogleAuthenticated ? await getGoogleToken().catch(() => null) : null,
+      };
 
       if (isManualAssignment) {
         // Group-aware delete: nuke every assignment that shares this groupId
@@ -417,30 +438,28 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           : [event];
 
         for (const a of toDelete) {
-          // Outlook side: use the assignment's own outlookEventId + its own member email
-          if (token && a.outlookEventId) {
-            const m = MEMBERS.find((mm) => mm.id === a.memberId);
-            const memberEmail = m?.email || a.memberEmail;
-            if (memberEmail && !m?.skipOutlookSync) {
-              const result = await deleteCalendarEvent(token, memberEmail, a.outlookEventId);
-              if (!result.success) {
-                // 404 = already deleted on Outlook side; treat as success
-                if (!/404/.test(result.error || '')) {
-                  outlookErrors.push(`${m?.nameJa || memberEmail}: ${result.error}`);
-                }
-              } else {
-                setEvents(events.filter((e) => e.id !== a.outlookEventId));
+          // Remote side: use the assignment's own remote id + provider
+          const m = MEMBERS.find((mm) => mm.id === a.memberId) || { email: a.memberEmail };
+          const remoteId = remoteEventId(m, a);
+          if (remoteId && shouldWriteRemote(m)) {
+            const result = await deleteRemoteEvent(m, tokens, remoteId);
+            if (!result.success) {
+              // 404/410 = already deleted remotely; treat as success
+              if (!/404|410/.test(result.error || '')) {
+                outlookErrors.push(`${m?.nameJa || a.memberEmail}: ${result.error}`);
               }
+            } else {
+              setEvents(events.filter((e) => e.id !== remoteId));
             }
           }
           dispatch({ type: 'DELETE_ASSIGNMENT', payload: a.id });
         }
-      } else if (isOutlook && token) {
-        // Pure Outlook event (not an assignment) — delete just it
-        const memberEmail = event.memberEmail || member?.email;
-        if (memberEmail) {
-          const result = await deleteCalendarEvent(token, memberEmail, event.id);
-          if (!result.success && !/404/.test(result.error || '')) {
+      } else if (isOutlook) {
+        // Pure remote event (not an assignment) — delete just it
+        const evMember = MEMBERS.find((m) => (m.email || '').toLowerCase() === (event.memberEmail || '').toLowerCase()) || { email: event.memberEmail };
+        if (evMember.email || event.memberEmail) {
+          const result = await deleteRemoteEvent(evMember, tokens, event.id);
+          if (!result.success && !/404|410/.test(result.error || '')) {
             outlookErrors.push(`${event.memberEmail}: ${result.error}`);
           } else {
             setEvents(events.filter((e) => e.id !== event.id));
@@ -449,7 +468,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       }
 
       if (outlookErrors.length > 0) {
-        setError(`Outlook削除エラー:\n${outlookErrors.join('\n')}`);
+        setError(`カレンダー削除エラー:\n${outlookErrors.join('\n')}`);
         setSaving(false);
         return;
       }
@@ -705,7 +724,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                       className="w-4 h-4 text-accent rounded border-edge focus:ring-accent"
                     />
                     <span className="text-sm text-ink">
-                      {(isOutlook || event.outlookEventId) ? 'Outlookに反映' : 'Outlookに登録'}
+                      {(isOutlook || event.outlookEventId || event.googleEventId) ? 'カレンダーに反映' : 'カレンダーに登録'}
                     </span>
                   </label>
                 )}

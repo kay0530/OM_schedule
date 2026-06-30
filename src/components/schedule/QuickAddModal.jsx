@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { createCalendarEvent } from '../../services/graphCalendarService';
+import { useGoogleAuth } from '../../context/GoogleAuthContext';
+import { memberProvider, shouldWriteRemote, createRemoteEvent } from '../../services/calendarWrite';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
 
@@ -22,6 +23,7 @@ for (let h = 0; h <= 24; h++) {
 export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime, presetMemberId, presetAllDay, presetIsDelivery }) {
   const { dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
+  const { isGoogleAuthenticated, getGoogleToken } = useGoogleAuth();
   const { dragOffset, handleDragHandleMouseDown, resetDrag } = useModalDrag();
 
   const [title, setTitle] = useState('');
@@ -83,39 +85,47 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
 
     const outlookErrors = [];
 
+    // Acquire remote-calendar tokens once for the batch (only the providers present).
+    const batchMembers = selectedMembers.map((id) => MEMBERS.find((m) => m.id === id));
+    const tokens = { outlook: null, google: null };
+    if (syncOutlook) {
+      const needOutlook = batchMembers.some((m) => memberProvider(m) === 'outlook' && shouldWriteRemote(m));
+      const needGoogle = batchMembers.some((m) => memberProvider(m) === 'google');
+      if (needOutlook && isAuthenticated) tokens.outlook = await getToken().catch(() => null);
+      if (needGoogle && isGoogleAuthenticated) tokens.google = await getGoogleToken().catch(() => null);
+    }
+
     for (const memberId of selectedMembers) {
       const member = MEMBERS.find((m) => m.id === memberId);
 
-      // Create Outlook event FIRST to capture returned ID
-      let outlookEventId = null;
-      if (syncOutlook && isAuthenticated && member && !member.skipOutlookSync) {
+      // Create the remote event FIRST to capture returned ID
+      let remoteId = null;
+      if (syncOutlook && shouldWriteRemote(member)) {
         try {
-          const token = await getToken();
-          if (token) {
-            const bodyContent = buildEventBody(memo);
-            const eventData = effAllDay ? {
-              subject: finalTitle,
-              isAllDay: true,
-              start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: location },
-              body: { contentType: 'Text', content: bodyContent },
-            } : {
-              subject: finalTitle,
-              start: { dateTime: `${date}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${date}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
-              location: { displayName: location },
-              body: { contentType: 'Text', content: bodyContent },
-            };
-            const result = await createCalendarEvent(token, member.email, eventData);
-            if (result.success) outlookEventId = result.data?.id || null;
-            else outlookErrors.push(`${member.nameJa}: ${result.error}`);
-          }
+          const bodyContent = buildEventBody(memo);
+          const eventData = effAllDay ? {
+            subject: finalTitle,
+            isAllDay: true,
+            start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: location },
+            body: { contentType: 'Text', content: bodyContent },
+          } : {
+            subject: finalTitle,
+            start: { dateTime: `${date}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${date}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: location },
+            body: { contentType: 'Text', content: bodyContent },
+          };
+          const result = await createRemoteEvent(member, tokens, eventData);
+          if (result.success) remoteId = result.data?.id || null;
+          else outlookErrors.push(`${member.nameJa}: ${result.error}`);
         } catch (err) {
           outlookErrors.push(`${member?.nameJa || memberId}: ${err.message}`);
         }
       }
 
+      const provider = memberProvider(member);
       dispatch({
         type: 'ADD_ASSIGNMENT',
         payload: {
@@ -132,7 +142,8 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
           syncOutlook,
           address: location,
           scheduleMemo: memo,
-          outlookEventId,
+          outlookEventId: provider === 'outlook' ? remoteId : null,
+          googleEventId: provider === 'google' ? remoteId : null,
           groupId,
         },
       });
@@ -259,7 +270,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
             <label className="flex items-center gap-2 text-sm text-ink">
               <input type="checkbox" checked={syncOutlook} onChange={(e) => setSyncOutlook(e.target.checked)}
                 className="w-4 h-4 text-orange-600 rounded" />
-              Outlookに登録する
+              カレンダーに登録する
             </label>
 
             {/* Actions */}

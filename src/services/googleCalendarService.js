@@ -138,3 +138,114 @@ export async function fetchGoogleCalendarEvents(accessToken, member, startDate, 
     return { success: false, data, error: err.message };
   }
 }
+
+// ========== Write ==========
+
+/** Add one day to a 'YYYY-MM-DD' string (local date arithmetic, no TZ shift). */
+function addOneDayIso(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + 1);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Translate the app's MS365-shaped event body into a Google Calendar event body.
+ * - subject -> summary, body.content -> description, location.displayName -> location (plain string)
+ * - timed: start/end { dateTime:'YYYY-MM-DDTHH:MM:SS', timeZone }
+ * - all-day: start { date }, end { date } where end is the EXCLUSIVE next day
+ *   (Google's all-day model), unlike the app's Outlook all-day which uses start==end.
+ * @param {Object} eventData - MS365-compatible body (subject/start/end/location/body/isAllDay)
+ * @returns {Object} Google event resource
+ */
+export function buildGoogleEventBody(eventData) {
+  const summary = eventData.subject || '';
+  const description = eventData.body?.content || '';
+  const location = eventData.location?.displayName || '';
+
+  if (eventData.isAllDay) {
+    const startDate = (eventData.start?.dateTime || '').substring(0, 10);
+    return {
+      summary,
+      description,
+      location,
+      start: { date: startDate },
+      end: { date: addOneDayIso(startDate) },
+    };
+  }
+  return {
+    summary,
+    description,
+    location,
+    start: {
+      dateTime: eventData.start.dateTime,
+      timeZone: eventData.start.timeZone || 'Asia/Tokyo',
+    },
+    end: {
+      dateTime: eventData.end.dateTime,
+      timeZone: eventData.end.timeZone || 'Asia/Tokyo',
+    },
+  };
+}
+
+/**
+ * Create an event on a member's Google calendar.
+ * @returns {Promise<{success:boolean, data:Object|null, error:string|null}>}
+ */
+export async function insertGoogleEvent(accessToken, calendarId, eventBody) {
+  try {
+    const res = await fetch(`${GCAL_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(eventBody),
+    });
+    if (!res.ok) {
+      return { success: false, data: null, error: `Google ${res.status}: ${await res.text()}` };
+    }
+    return { success: true, data: await res.json(), error: null };
+  } catch (err) {
+    return { success: false, data: null, error: err.message };
+  }
+}
+
+/**
+ * Update (patch) an existing event on a member's Google calendar.
+ * @returns {Promise<{success:boolean, data:Object|null, error:string|null}>}
+ */
+export async function patchGoogleEvent(accessToken, calendarId, eventId, eventBody) {
+  try {
+    const res = await fetch(
+      `${GCAL_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(eventBody),
+      }
+    );
+    if (!res.ok) {
+      return { success: false, data: null, error: `Google ${res.status}: ${await res.text()}` };
+    }
+    return { success: true, data: await res.json(), error: null };
+  } catch (err) {
+    return { success: false, data: null, error: err.message };
+  }
+}
+
+/**
+ * Delete an event from a member's Google calendar.
+ * 404/410 (already gone) is treated as success, mirroring the Graph DELETE.
+ * @returns {Promise<{success:boolean, data:Object|null, error:string|null}>}
+ */
+export async function removeGoogleEvent(accessToken, calendarId, eventId) {
+  try {
+    const res = await fetch(
+      `${GCAL_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (res.ok || res.status === 404 || res.status === 410) {
+      return { success: true, data: { alreadyGone: res.status === 404 || res.status === 410 }, error: null };
+    }
+    return { success: false, data: null, error: `Google ${res.status}: ${await res.text()}` };
+  } catch (err) {
+    return { success: false, data: null, error: err.message };
+  }
+}

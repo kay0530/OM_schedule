@@ -357,7 +357,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                           </div>
                         ))}
                         {allDayAsg.map((a) => {
-                          const synced = !!a.outlookEventId;
+                          const synced = !!(a.outlookEventId || a.googleEventId);
                           return (
                             <div
                               key={a.id}
@@ -464,7 +464,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                     <AllDayOverlay
                       items={[
                         ...getAllDayEventsForMember(member.email).map((e) => ({ id: `o-${e.id}`, color: member.color, draft: false })),
-                        ...getAllDayAssignmentsForMember(member.id).map((a) => ({ id: `a-${a.id}`, color: member.color, draft: !a.outlookEventId })),
+                        ...getAllDayAssignmentsForMember(member.id).map((a) => ({ id: `a-${a.id}`, color: member.color, draft: !(a.outlookEventId || a.googleEventId) })),
                       ]}
                       totalHeight={gridHeight}
                     />

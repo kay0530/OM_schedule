@@ -234,7 +234,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       const asg = getAllDayAssignmentsForMemberDate(member.id, date).map((a) => ({
         id: `a-${a.id}`,
         color: member.color,
-        draft: !a.outlookEventId,
+        draft: !(a.outlookEventId || a.googleEventId),
       }));
       return [...evts, ...asg];
     },
@@ -632,7 +632,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                 ))}
                                 {/* App-created all-day — solid when synced, tint+hatch when draft */}
                                 {allDayAsg.map((a) => {
-                                  const synced = !!a.outlookEventId;
+                                  const synced = !!(a.outlookEventId || a.googleEventId);
                                   return (
                                     <div
                                       key={a.id}
@@ -874,7 +874,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                   </div>
                                 ))}
                                 {allDayAsg.map((a) => {
-                                  const synced = !!a.outlookEventId;
+                                  const synced = !!(a.outlookEventId || a.googleEventId);
                                   return (
                                     <div
                                       key={a.id}

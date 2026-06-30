@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { createCalendarEvent } from '../../services/graphCalendarService';
+import { useGoogleAuth } from '../../context/GoogleAuthContext';
+import { memberProvider, shouldWriteRemote, createRemoteEvent } from '../../services/calendarWrite';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
 
@@ -31,6 +32,7 @@ export default function AssignModal({
 }) {
   const { dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
+  const { isGoogleAuthenticated, getGoogleToken } = useGoogleAuth();
   const { dragOffset, handleDragHandleMouseDown, resetDrag } = useModalDrag();
 
   const [selectedMembers, setSelectedMembers] = useState([]);
@@ -106,45 +108,47 @@ export default function AssignModal({
       ? `group_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
       : null;
 
+    // Acquire remote-calendar tokens once for the batch (only the providers present).
+    const batchMembers = selectedMembers.map((id) => MEMBERS.find((m) => m.id === id));
+    const tokens = { outlook: null, google: null };
+    if (syncOutlook) {
+      const needOutlook = batchMembers.some((m) => memberProvider(m) === 'outlook' && shouldWriteRemote(m));
+      const needGoogle = batchMembers.some((m) => memberProvider(m) === 'google');
+      if (needOutlook && isAuthenticated) tokens.outlook = await getToken().catch(() => null);
+      if (needGoogle && isGoogleAuthenticated) tokens.google = await getGoogleToken().catch(() => null);
+    }
+
     for (const memberId of selectedMembers) {
       const member = MEMBERS.find((m) => m.id === memberId);
 
-      // Create Outlook event FIRST so we can store the returned ID on the assignment
-      let outlookEventId = null;
-      if (syncOutlook && member && !member.skipOutlookSync) {
-        if (!isAuthenticated) {
-          outlookResults.push({ member: member.nameJa, success: false, error: 'MS365未ログイン' });
-        } else {
-          try {
-            const token = await getToken();
-            if (!token) {
-              outlookResults.push({ member: member.nameJa, success: false, error: 'トークン取得失敗' });
-            } else {
-              const bodyContent = buildEventBody(memo || opportunity.scheduleMemo || opportunity.content || '');
-              const eventData = isAllDay ? {
-                subject: displayName,
-                isAllDay: true,
-                start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-                end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-                location: { displayName: opportunity.address || '' },
-                body: { contentType: 'Text', content: bodyContent },
-              } : {
-                subject: displayName,
-                start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
-                end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
-                location: { displayName: opportunity.address || '' },
-                body: { contentType: 'Text', content: bodyContent },
-              };
-              const result = await createCalendarEvent(token, member.email, eventData);
-              if (result.success) outlookEventId = result.data?.id || null;
-              outlookResults.push({ member: member.nameJa, success: result.success, error: result.error });
-            }
-          } catch (err) {
-            outlookResults.push({ member: member.nameJa, success: false, error: err.message });
-          }
+      // Create the remote event FIRST so we can store the returned ID on the assignment
+      let remoteId = null;
+      if (syncOutlook && shouldWriteRemote(member)) {
+        try {
+          const bodyContent = buildEventBody(memo || opportunity.scheduleMemo || opportunity.content || '');
+          const eventData = isAllDay ? {
+            subject: displayName,
+            isAllDay: true,
+            start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: opportunity.address || '' },
+            body: { contentType: 'Text', content: bodyContent },
+          } : {
+            subject: displayName,
+            start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
+            location: { displayName: opportunity.address || '' },
+            body: { contentType: 'Text', content: bodyContent },
+          };
+          const result = await createRemoteEvent(member, tokens, eventData);
+          if (result.success) remoteId = result.data?.id || null;
+          outlookResults.push({ member: member.nameJa, success: result.success, error: result.error });
+        } catch (err) {
+          outlookResults.push({ member: member.nameJa, success: false, error: err.message });
         }
       }
 
+      const provider = memberProvider(member);
       const assignmentPayload = {
         sourceType: opportunity.type || 'opportunity',
         opportunityId: opportunity.id,
@@ -164,7 +168,8 @@ export default function AssignModal({
         stage: isMaint ? null : opportunity.stage,
         address: opportunity.address,
         scheduleMemo: memo || (isMaint ? opportunity.content : opportunity.scheduleMemo),
-        outlookEventId,
+        outlookEventId: provider === 'outlook' ? remoteId : null,
+        googleEventId: provider === 'google' ? remoteId : null,
         groupId,
       };
 
@@ -178,13 +183,13 @@ export default function AssignModal({
       const successes = outlookResults.filter((r) => r.success).length;
       const failures = outlookResults.filter((r) => !r.success);
       if (failures.length === 0) {
-        alert(`割り当て完了。Outlook予定を${successes}件作成しました。`);
+        alert(`割り当て完了。カレンダー予定を${successes}件作成しました。`);
       } else {
         const failNames = failures.map((f) => `${f.member}: ${f.error}`).join('\n');
-        alert(`割り当て完了。Outlook: ${successes}件成功、${failures.length}件失敗\n${failNames}`);
+        alert(`割り当て完了。カレンダー: ${successes}件成功、${failures.length}件失敗\n${failNames}`);
       }
     } else if (syncOutlook) {
-      alert('割り当て完了。（Outlook登録対象のメンバーがいませんでした）');
+      alert('割り当て完了。（カレンダー登録対象のメンバーがいませんでした）');
     } else {
       alert('割り当て完了。');
     }
@@ -394,7 +399,7 @@ export default function AssignModal({
                 className="w-4 h-4 text-accent border-edge rounded focus:ring-accent"
               />
               <label htmlFor="sync-outlook" className="text-sm text-ink">
-                Outlookに登録する
+                カレンダーに登録する
               </label>
             </div>
             {syncOutlook && (
