@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// Production Firestore rules for the OM schedule app.
+//
+// The app authenticates users with MSAL/Azure AD, NOT Firebase Auth, so these
+// rules cannot see the real user identity (request.auth is the anonymous
+// Firebase user). This is defense-in-depth, not full authorization: combined
+// with Firebase App Check it stops casual "grab the public config and curl the
+// data" access. True per-user authorization would require a Cloud Function that
+// mints a Firebase custom token from the verified MSAL identity (future work).
+//
+// Deploy with:  firebase deploy --only firestore:rules
+// Do NOT switch off test mode until: (1) the app ships anonymous sign-in,
+// (2) App Check is enforced, (3) sync-sf writes via the Admin SDK.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+
+    // Team schedule + shared filter presets: read/write for signed-in clients.
+    match /om-schedule-assignments/{id}    { allow read, write: if signedIn(); }
+    match /om-schedule-filter-presets/{id} { allow read, write: if signedIn(); }
+
+    // Salesforce data: read-only for clients; writes come only from the
+    // GitHub Actions sync via the Admin SDK (which bypasses these rules).
+    match /om-schedule-sf-data/{id}        { allow read: if signedIn(); allow write: if false; }
+
+    // Everything else denied.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

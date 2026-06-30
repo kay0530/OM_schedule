@@ -1,5 +1,5 @@
 import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, firebaseAuthReady } from '../firebase';
 
 /**
  * Salesforce data delivery via Firestore.
@@ -36,21 +36,30 @@ function assembleDataset(docs, meta, name) {
  */
 export function subscribeSfData(callback) {
   if (!db) return () => {};
-  try {
-    return onSnapshot(collection(db, COLLECTION_SF_DATA), (snap) => {
-      const docs = new Map();
-      snap.forEach((d) => docs.set(d.id, d.data()));
-      const syncMeta = docs.get('meta') || null;
-      const result = { syncMeta };
-      for (const name of DATASET_NAMES) {
-        result[name] = assembleDataset(docs, syncMeta, name);
-      }
-      callback(result);
-    }, (error) => {
-      console.error('[Firestore] SF data subscription error:', error);
-    });
-  } catch (e) {
-    console.error('[Firestore] Failed to subscribe SF data:', e);
-    return () => {};
-  }
+  let unsub = () => {};
+  let cancelled = false;
+  // Wait for the (anonymous) sign-in so locked rules don't deny the first read.
+  firebaseAuthReady.then(() => {
+    if (cancelled) return;
+    try {
+      unsub = onSnapshot(collection(db, COLLECTION_SF_DATA), (snap) => {
+        const docs = new Map();
+        snap.forEach((d) => docs.set(d.id, d.data()));
+        const syncMeta = docs.get('meta') || null;
+        const result = { syncMeta };
+        for (const name of DATASET_NAMES) {
+          result[name] = assembleDataset(docs, syncMeta, name);
+        }
+        callback(result);
+      }, (error) => {
+        console.error('[Firestore] SF data subscription error:', error);
+      });
+    } catch (e) {
+      console.error('[Firestore] Failed to subscribe SF data:', e);
+    }
+  });
+  return () => {
+    cancelled = true;
+    unsub();
+  };
 }
