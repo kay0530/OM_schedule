@@ -1,4 +1,5 @@
 import { useAuth } from '../../context/AuthContext';
+import { useGoogleAuth } from '../../context/GoogleAuthContext';
 import { useCalendar } from '../../context/CalendarContext';
 import { useApp } from '../../context/AppContext';
 import { useCalendarSync } from '../../hooks/useCalendarSync';
@@ -20,6 +21,7 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
   const { events, lastSynced, loading: calLoading } = useCalendar();
   const { settings, dispatch } = useApp();
   const { syncing, syncFromOutlook } = useCalendarSync();
+  const { isGoogleAuthenticated, googleLogin, googleLogout } = useGoogleAuth();
 
   const theme = settings.theme || 'light';
   function cycleTheme() {
@@ -249,6 +251,25 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
               <span className="text-xs text-ink-faint" title={`${events.length}件のOutlookイベント`}>
                 ({events.length}件)
               </span>
+            )}
+            {/* Google (member 瀬戸) connect / disconnect */}
+            {isGoogleAuthenticated ? (
+              <button
+                onClick={googleLogout}
+                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border border-green-500/40 text-green-600 dark:text-green-400 hover:bg-green-500/10 transition-colors"
+                title="Google連携を解除（瀬戸さん）"
+              >
+                <span className="w-2 h-2 bg-green-500 rounded-full" />
+                Google連携中
+              </button>
+            ) : (
+              <button
+                onClick={() => googleLogin().catch((e) => alert(`Google連携に失敗: ${e.message}`))}
+                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border border-edge text-ink-muted hover:bg-surface-hover hover:text-ink transition-colors"
+                title="瀬戸さんのGoogleカレンダーと連携"
+              >
+                Google連携
+              </button>
             )}
             <button
               onClick={logout}

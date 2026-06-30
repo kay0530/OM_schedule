@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { loadAzureConfig, saveAzureConfig, DEFAULT_AZURE_CONFIG } from '../../services/msalService';
+import { loadGoogleConfig, saveGoogleConfig } from '../../services/googleAuthService';
+import { useGoogleAuth } from '../../context/GoogleAuthContext';
 import { getGithubToken, saveGithubToken } from '../../services/githubSyncService';
 import { useSfData } from '../../context/SfDataContext';
 
@@ -28,6 +30,7 @@ const END_TIME_OPTIONS = generateTimeOptions(16, 20);
 export default function SettingsView() {
   const { assignments, settings, dispatch } = useApp();
   const { isAuthenticated, account, login, logout, loading: authLoading } = useAuth();
+  const { isGoogleAuthenticated, googleLogin, googleLogout } = useGoogleAuth();
 
   // --- Azure AD state ---
   const [clientId, setClientId] = useState('');
@@ -35,6 +38,10 @@ export default function SettingsView() {
   const [isConfigured, setIsConfigured] = useState(false);
   const [azureSaveMsg, setAzureSaveMsg] = useState('');
   const [connectingTest, setConnectingTest] = useState(false);
+
+  // --- Google (member 瀬戸) state ---
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleSaveMsg, setGoogleSaveMsg] = useState('');
 
   // --- Working hours state ---
   const [workStart, setWorkStart] = useState(settings.workingHours?.start || '08:00');
@@ -68,6 +75,11 @@ export default function SettingsView() {
     }
   }, []);
 
+  // Load Google config on mount
+  useEffect(() => {
+    setGoogleClientId(loadGoogleConfig().clientId || '');
+  }, []);
+
   // Sync working hours from context if settings change externally
   useEffect(() => {
     setWorkStart(settings.workingHours?.start || '08:00');
@@ -87,6 +99,18 @@ export default function SettingsView() {
       setAzureSaveMsg('Client ID と Tenant ID の両方を入力してください。');
     }
     setTimeout(() => setAzureSaveMsg(''), 5000);
+  }
+
+  // --- Google handlers ---
+  function handleGoogleSave() {
+    const trimmed = googleClientId.trim();
+    saveGoogleConfig(trimmed);
+    setGoogleSaveMsg(
+      trimmed
+        ? '保存しました。変更を反映するにはページをリロードしてください。'
+        : 'Client ID を削除しました。'
+    );
+    setTimeout(() => setGoogleSaveMsg(''), 5000);
   }
 
   async function handleTestConnection() {
@@ -340,6 +364,82 @@ export default function SettingsView() {
         <div className="mt-4 p-3 bg-canvas rounded-lg">
           <p className="text-xs text-ink-muted">
             必要な権限: <span className="font-mono text-accent">Calendars.ReadWrite</span>, <span className="font-mono text-accent">Calendars.ReadWrite.Shared</span>, <span className="font-mono text-accent">User.Read</span>
+          </p>
+        </div>
+      </div>
+
+      {/* ===== Section 1.5: Google Calendar (member 瀬戸) ===== */}
+      <div className="bg-raised rounded-xl border border-edge p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-green-100 dark:bg-green-500/20 rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-bold text-ink">Google連携（瀬戸さん）</h3>
+            <p className="text-sm text-ink-muted">Google カレンダーの読み書き（瀬戸さん専用）</p>
+          </div>
+          <div className="ml-auto">
+            {isGoogleAuthenticated ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                接続済み
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-canvas text-ink-muted">
+                <span className="w-1.5 h-1.5 bg-ink-faint rounded-full" />
+                未接続
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-ink mb-1">
+              Google OAuth クライアント ID（ウェブアプリ）
+            </label>
+            <input
+              type="text"
+              value={googleClientId}
+              onChange={(e) => { setGoogleClientId(e.target.value); setGoogleSaveMsg(''); }}
+              placeholder="xxxxxxxx.apps.googleusercontent.com"
+              className="w-full px-3 py-2 border border-edge rounded-lg text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent font-mono"
+            />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleGoogleSave}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              保存
+            </button>
+            {isGoogleAuthenticated ? (
+              <button
+                onClick={() => googleLogout()}
+                className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 dark:bg-red-500/10 rounded-lg hover:bg-red-100 transition-colors"
+              >
+                連携を解除
+              </button>
+            ) : (
+              <button
+                onClick={() => googleLogin().catch((err) => setGoogleSaveMsg(`連携に失敗: ${err.message}`))}
+                disabled={!googleClientId.trim()}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-accent bg-accent-soft rounded-lg hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Googleで連携
+              </button>
+            )}
+            {googleSaveMsg && (
+              <span className="text-sm text-amber-600 font-medium">{googleSaveMsg}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 p-3 bg-canvas rounded-lg">
+          <p className="text-xs text-ink-muted">
+            必要なスコープ: <span className="font-mono text-accent">calendar.events</span> ／ 瀬戸さんが自分の Google カレンダーを運用者アカウントに「予定の変更権限」で共有しておく必要があります。
           </p>
         </div>
       </div>

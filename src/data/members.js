@@ -11,7 +11,13 @@ export const MEMBERS = [
   { id: 'yamazaki_k', nameJa: '山崎', nameEn: 'Yamazaki', email: 'kaito.yamazaki@altenergy.co.jp', color: '#EC4899', role: 'regular' },
   { id: 'ota_t', nameJa: '太田', nameEn: 'Ota', email: 'takahiro.ota@altenergy.co.jp', color: '#EF4444', role: 'regular' },
   { id: 'wano_t', nameJa: '和埜', nameEn: 'Wano', email: 'tatsuto.wano@altenergy.co.jp', color: '#8B5CF6', role: 'regular' },
-  { id: 'seto_r', nameJa: '瀬戸', nameEn: 'Seto', email: 'nstandard.info@gmail.com', color: '#14B8A6', role: 'regular', skipOutlookSync: true }, // Gmail user
+  // 瀬戸 is on a personal Google Calendar (not the M365 tenant), so he is routed
+  // to Google instead of Outlook/Graph. `calendarProvider:'google'` drives the
+  // read/write branch; `skipOutlookSync:true` is KEPT to mean "never touch Graph
+  // for this member" — do not remove it when cleaning up. googleCalendarId is the
+  // calendar shared (with edit access) to the operator's Google account; replace
+  // with the actual shared calendarId if it is not his primary (gmail) calendar.
+  { id: 'seto_r', nameJa: '瀬戸', nameEn: 'Seto', email: 'nstandard.info@gmail.com', color: '#14B8A6', role: 'regular', skipOutlookSync: true, calendarProvider: 'google', googleCalendarId: 'nstandard.info@gmail.com' },
   { id: 'tago_s', nameJa: '田子', nameEn: 'Tago', email: 'shoichiro.tago@altenergy.co.jp', color: '#A855F7', role: 'preparation' },
   { id: 'delivery', nameJa: '納品', nameEn: 'Delivery', email: 'powermaru@altenergy.co.jp', color: '#D97706', role: 'delivery' },
 ];

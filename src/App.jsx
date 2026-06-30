@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CalendarProvider, useCalendar } from './context/CalendarContext';
 import { AppProvider, useApp } from './context/AppContext';
+import { GoogleAuthProvider } from './context/GoogleAuthContext';
 import { MEMBERS } from './data/members';
 import { deleteCalendarEvent } from './services/graphCalendarService';
 import MainLayout from './components/layout/MainLayout';
@@ -22,14 +23,16 @@ function AuthenticatedApp() {
     return <LoginGate />;
   }
   return (
-    <CalendarProvider>
-      <AppProvider>
-        <SfDataProvider>
-          <ThemeApplier />
-          <AppInner />
-        </SfDataProvider>
-      </AppProvider>
-    </CalendarProvider>
+    <GoogleAuthProvider>
+      <CalendarProvider>
+        <AppProvider>
+          <SfDataProvider>
+            <ThemeApplier />
+            <AppInner />
+          </SfDataProvider>
+        </AppProvider>
+      </CalendarProvider>
+    </GoogleAuthProvider>
   );
 }
 
