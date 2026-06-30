@@ -141,3 +141,20 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--ink-faint); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ink-muted); }
+
+/* Native <select> dropdowns. On Windows/Chrome the option list popup does not
+   reliably follow `color-scheme: dark`, so it renders white with pale text and
+   becomes unreadable in dark mode. Pin both the control and its options to
+   theme tokens. Unlayered (beats utilities) — selects here set no bg utility,
+   so there is nothing to override. */
+select {
+  background-color: var(--raised);
+  color: var(--ink);
+}
+select option {
+  background-color: var(--raised);
+  color: var(--ink);
+}
+select option:checked {
+  background-color: var(--accent-soft);
+}
