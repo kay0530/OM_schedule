@@ -12,6 +12,7 @@ import { MEMBERS } from '../data/members';
 export const REPORT_COLUMNS = [
   '日付',
   '案件名',
+  '記載者',
   '場所',
   '移動時間',
   '作業時間',
@@ -24,6 +25,7 @@ export const REPORT_COLUMNS = [
 const COLUMN_WIDTHS = {
   '日付': 12,
   '案件名': 38,
+  '記載者': 10,
   '場所': 28,
   '移動時間': 10,
   '作業時間': 16,
@@ -82,6 +84,7 @@ export async function collectWorkReports(getToken, startDate, endDate) {
           _score: score,
           '日付': eventDate(ev),
           '案件名': ev.subject || '',
+          '記載者': m.nameJa,
           '場所': ev.location || '',
           '移動時間': report.movingTime,
           '作業時間': report.workTime,
