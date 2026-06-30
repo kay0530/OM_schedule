@@ -3,7 +3,7 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import JobPanel from '../jobs/JobPanel';
 
-export default function MainLayout({ activeView, onNavigate, currentDate, onDateChange, onSelectOpportunity, children }) {
+export default function MainLayout({ activeView, onNavigate, currentDate, onDateChange, onSelectOpportunity, bannerOffset = false, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [jobPanelOpen, setJobPanelOpen] = useState(true);
@@ -22,6 +22,7 @@ export default function MainLayout({ activeView, onNavigate, currentDate, onDate
         }}
         currentDate={currentDate}
         onDateChange={onDateChange}
+        bannerOffset={bannerOffset}
       />
       <Sidebar
         activeView={activeView}
@@ -30,8 +31,9 @@ export default function MainLayout({ activeView, onNavigate, currentDate, onDate
         collapsed={sidebarCollapsed}
         onClose={() => setSidebarOpen(false)}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        bannerOffset={bannerOffset}
       />
-      <main className={`pt-14 transition-all duration-200 ${
+      <main className={`${bannerOffset ? 'pt-24' : 'pt-14'} transition-all duration-200 ${
         sidebarCollapsed ? 'lg:pl-14' : 'lg:pl-60'
       } ${jobPanelOpen ? 'lg:pr-80' : 'pr-0'}`}>
         <div className="p-4 lg:p-6">
@@ -42,6 +44,7 @@ export default function MainLayout({ activeView, onNavigate, currentDate, onDate
         onSelectOpportunity={onSelectOpportunity}
         isOpen={jobPanelOpen}
         onToggle={() => setJobPanelOpen(!jobPanelOpen)}
+        bannerOffset={bannerOffset}
       />
     </div>
   );

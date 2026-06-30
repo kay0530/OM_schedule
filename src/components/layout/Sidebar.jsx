@@ -39,7 +39,7 @@ const NAV_ITEMS = [
   },
 ];
 
-export default function Sidebar({ activeView, onNavigate, isOpen, collapsed, onClose, onToggleCollapse }) {
+export default function Sidebar({ activeView, onNavigate, isOpen, collapsed, onClose, onToggleCollapse, bannerOffset = false }) {
   return (
     <>
       {/* Mobile overlay */}
@@ -51,7 +51,7 @@ export default function Sidebar({ activeView, onNavigate, isOpen, collapsed, onC
       )}
 
       <aside
-        className={`fixed top-14 left-0 bottom-0 bg-raised border-r border-edge z-40 transform transition-all duration-200 ${
+        className={`fixed ${bannerOffset ? 'top-24' : 'top-14'} left-0 bottom-0 bg-raised border-r border-edge z-40 transform transition-all duration-200 ${
           collapsed ? 'w-14' : 'w-60'
         } ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
       >

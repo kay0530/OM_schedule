@@ -355,7 +355,7 @@ function AppInner() {
           📋 貼り付けモード — 「{copiedEvent.opportunityName}」をカレンダーのスロットをクリックして配置 （クリック/Escでキャンセル）
         </div>
       )}
-      <div onKeyDown={handleKeyDown} tabIndex={-1} className={pickedJob || copiedEvent ? 'pt-10' : ''}>
+      <div onKeyDown={handleKeyDown} tabIndex={-1}>
         <MainLayout
           activeView={activeView}
           onNavigate={navigate}
@@ -363,6 +363,7 @@ function AppInner() {
           onDateChange={setCurrentDate}
           onSelectOpportunity={handleSelectOpportunity}
           pickedJob={pickedJob}
+          bannerOffset={Boolean(pickedJob || copiedEvent)}
         >
           {renderView()}
         </MainLayout>

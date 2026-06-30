@@ -65,7 +65,7 @@ function saveLastFilter(filter) {
   localStorage.setItem(LAST_FILTER_STORAGE_KEY, JSON.stringify(filter));
 }
 
-export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle }) {
+export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle, bannerOffset = false }) {
   const collapsed = !isOpen;
 
   // SF data streamed from Firestore (empty arrays until the first snapshot)
@@ -322,7 +322,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
   // Collapsed state
   if (collapsed) {
     return (
-      <div className="fixed right-0 top-14 z-30">
+      <div className={`fixed right-0 ${bannerOffset ? 'top-24' : 'top-14'} z-30`}>
         <button
           onClick={() => onToggle()}
           className="bg-surface border border-edge rounded-l-lg px-2 py-3 shadow-md hover:bg-surface-hover transition"
@@ -348,7 +348,7 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle 
   const colorMap = isOppTab ? STAGE_COLORS : MAINT_STATUS_COLORS;
 
   return (
-    <aside className="fixed right-0 top-14 bottom-0 w-80 bg-surface border-l border-edge shadow-lg z-30 flex flex-col">
+    <aside className={`fixed right-0 ${bannerOffset ? 'top-24' : 'top-14'} bottom-0 w-80 bg-surface border-l border-edge shadow-lg z-30 flex flex-col`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-edge bg-canvas">
         <h2 className="text-sm font-bold text-ink">

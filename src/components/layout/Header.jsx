@@ -15,7 +15,7 @@ function formatMonth(date) {
 const THEME_CYCLE = { light: 'dark', dark: 'system', system: 'light' };
 const THEME_LABELS = { light: 'ライト', dark: 'ダーク', system: 'システム連動' };
 
-export default function Header({ activeView, onNavigate, onToggleSidebar, currentDate, onDateChange }) {
+export default function Header({ activeView, onNavigate, onToggleSidebar, currentDate, onDateChange, bannerOffset = false }) {
   const { isAuthenticated, account, loading, error, login, logout, getToken } = useAuth();
   const { events, lastSynced, loading: calLoading } = useCalendar();
   const { settings, dispatch } = useApp();
@@ -92,7 +92,7 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
         : formatMonth(currentDate);
 
   return (
-    <header className="h-14 bg-raised border-b border-edge flex items-center px-4 fixed top-0 left-0 right-0 z-30">
+    <header className={`h-14 bg-raised border-b border-edge flex items-center px-4 fixed ${bannerOffset ? 'top-10' : 'top-0'} left-0 right-0 z-30`}>
       {/* Mobile sidebar toggle */}
       <button
         onClick={onToggleSidebar}
