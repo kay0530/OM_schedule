@@ -67,8 +67,13 @@ function AppInner() {
         updates.title = newTitle;
       }
       if (newDate && newDate !== a.date) updates.date = newDate;
-      if (newStart && newStart !== a.startTime) updates.startTime = newStart;
-      if (newEnd && newEnd !== a.endTime) updates.endTime = newEnd;
+      // All-day events store start/end at midnight (end = next-day midnight on
+      // the Outlook side). Reconciling times would clobber the local 00:00/24:00
+      // convention and cause spurious writes, so only reconcile times for timed events.
+      if (!oe.isAllDay) {
+        if (newStart && newStart !== a.startTime) updates.startTime = newStart;
+        if (newEnd && newEnd !== a.endTime) updates.endTime = newEnd;
+      }
       if (newLocation !== (a.address || '')) updates.address = newLocation;
       if (Object.keys(updates).length > 0) {
         dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, ...updates } });

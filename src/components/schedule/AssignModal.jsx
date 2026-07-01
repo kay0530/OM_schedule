@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { createEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
+import { addDays } from '../../utils/dateUtils';
 
 /**
  * Modal dialog for assigning a job (opportunity or maintenance) to member(s).
@@ -124,8 +125,9 @@ export default function AssignModal({
               const eventData = isAllDay ? {
                 subject: displayName,
                 isAllDay: true,
+                // Graph requires all-day events to span >= 24h: end = next-day midnight
                 start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-                end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+                end: { dateTime: `${addDays(date)}T00:00:00`, timeZone: 'Asia/Tokyo' },
                 location: { displayName: opportunity.address || '' },
                 body: { contentType: 'Text', content: bodyContent },
               } : {

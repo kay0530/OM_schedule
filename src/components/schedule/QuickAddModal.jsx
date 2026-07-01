@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { createEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
+import { addDays } from '../../utils/dateUtils';
 
 /**
  * Quick-add modal for creating a manual schedule entry via double-click.
@@ -96,8 +97,9 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
             const eventData = effAllDay ? {
               subject: finalTitle,
               isAllDay: true,
+              // Graph requires all-day events to span >= 24h: end = next-day midnight
               start: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${date}T00:00:00`, timeZone: 'Asia/Tokyo' },
+              end: { dateTime: `${addDays(date)}T00:00:00`, timeZone: 'Asia/Tokyo' },
               location: { displayName: location },
               body: { contentType: 'Text', content: bodyContent },
             } : {

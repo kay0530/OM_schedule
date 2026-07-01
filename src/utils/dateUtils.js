@@ -17,6 +17,21 @@ export function toISODate(date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Return the ISO date (YYYY-MM-DD) that is `days` after the given ISO date.
+ * Calendar-date arithmetic only (parses components locally to avoid UTC
+ * parsing shifts), so month/year rollover is handled correctly.
+ * @param {string} dateStr - ISO date "YYYY-MM-DD"
+ * @param {number} days - Number of days to add (default 1)
+ * @returns {string} ISO date string
+ */
+export function addDays(dateStr, days = 1) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return toISODate(dt);
+}
+
 export function getWeekDates(baseDate) {
   const d = new Date(baseDate);
   const day = d.getDay();

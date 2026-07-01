@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useCalendar } from '../../context/CalendarContext';
 import { createEventForMember, updateEventForMember, deleteEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
+import { addDays } from '../../utils/dateUtils';
 
 // Generate 30-minute interval options from 08:00 to 18:00
 const TIME_OPTIONS = [];
@@ -260,8 +261,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
         ? {
             subject: finalTitle,
             isAllDay: true,
+            // Graph requires all-day events to span >= 24h: end = next-day midnight
             start: { dateTime: `${editDate}T00:00:00`, timeZone: 'Asia/Tokyo' },
-            end: { dateTime: `${editDate}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${addDays(editDate)}T00:00:00`, timeZone: 'Asia/Tokyo' },
             location: { displayName: editLocation || '' },
             body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
           }
