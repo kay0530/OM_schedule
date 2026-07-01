@@ -1,5 +1,38 @@
 # Construction Schedule (パワまる工事予定表)
 
+## 🔄 セッション引き継ぎ（最終更新: 2026-07-01）
+
+**この日の3機能はすべて main にマージ済み・本番稼働中。**
+
+### 1. 活動報告エクスポート（管理部・唐さん向け）
+- ヘッダー「活動報告」ボタン → 期間指定 → **全メンバーのOutlook予定“本文”の作業報告テンプレ**（移動時間/作業時間/作業者名/作業内容/残タスク）を解析し **1案件1行・記入済みのみ**で `.xlsx` ダウンロード。列に **記載者**（どのメンバーの予定に入っていたか）を含む。
+- 実装: `src/services/reportParser.js`（表記ゆれ吸収・4実サンプルで検証）, `reportExportService.js`（SheetJS遅延読込）, `ReportExportModal.jsx`, Graph `fetchMemberEventsWithBody`（`Prefer: outlook.body-content-type="text"`）。AIクレジット不使用・運用者のGraphトークンで完結。
+- **瀬戸さんはOutlookに本文が無いため対象外**（他9名）。
+
+### 2. Firestore ロックダウン（セキュリティ・完了）
+- **ルール本番化** (`firestore.rules` + `firebase.json`): `request.auth != null` で認証必須、`om-schedule-sf-data` はクライアント読取専用（書込は Admin のみ）。テストモード（全開放）を解消。
+- **App Check（reCAPTCHA v3）＝強制ON**。サイトキーは `firebase.js` にハードコード（公開情報）。匿名認証を `firebase.js` で実行し、読み書きは `firebaseAuthReady` を待つ（`firestoreService.js`/`sfDataService.js`）。
+- **CIをAdmin SDK化**: `scripts/sync-sf.mjs` は `firebase-admin` + GitHub Secret `FIREBASE_SERVICE_ACCOUNT`（サービスアカウントJSON）でルールをバイパス。
+- コンソール設定: Firebase匿名認証ON / App Check reCAPTCHA登録＆Cloud Firestoreへ「適用（強制）」済 / reCAPTCHA v3キーは`kay0530.github.io`許可。
+- **残る理想形（未実施・Blaze必要）**: MSAL身元→Firebaseカスタムトークン（Cloud Function）で“個人単位”の認可。現状は「認証＋App Check」の多層防御まで。
+
+### 3. 瀬戸さんのカレンダー連携（Outlook共有カレンダー方式・完了）
+- **瀬戸さんはテナントユーザーではない**（Gmail `nstandard.info@gmail.com`）。彼の実運用カレンダーは**個人MSアカウント（`outlook_8390B1F083584B14@outlook.com`）が所有し、運用者のOutlookに共有された「瀬戸 勇介」カレンダー**。運用者は編集権限あり。
+- 実装: `members.js` の瀬戸に `sharedCalendarOwner: 'outlook_8390B1F083584B14@outlook.com'`（`skipOutlookSync` は削除）。`graphCalendarService.js` に **`/me/calendars/{id}` 経由**の `fetchSharedCalendarEvents` と member-aware ラッパー `createEventForMember`/`updateEventForMember`/`deleteEventForMember`（calendarId は所有者アドレスで実行時解決＋キャッシュ）。全書込4箇所（Assign/QuickAdd/EventDetail/App削除）＋読取sweepがラッパー経由。
+- **イベントIDは通常のOutlook ID**なので `outlookEventId`・突合・dedup・チップ表示は無改造で流用。
+- **運用上の唯一の例外**: 瀬戸さんの同期は「操作者のOutlookに瀬戸カレンダーが共有追加済み」が前提。他の人がアプリで瀬戸さんを操作するなら、その人が一度自分のOutlookに追加する必要あり。
+- **Googleは棚上げ（不採用）**: `feat/google-calendar-sync` ブランチ・Google Cloud OAuth（`OM-schedule`プロジェクト）・reCAPTCHAは**未使用**（書込先が違ったため）。削除して良いが害なし。`plan-google-calendar-sync.md` はその検討記録。
+
+### 直近の小修正（既済み）
+- ダークモードで `<select>` の候補リストが白背景で読めない → `index.css` で option を着色。
+- コピーモード（Ctrl+C）中にヘッダーの日付送りが押せない → バナー表示中は固定ヘッダー群を `bannerOffset` で押し下げ。
+
+### 未対応・任意
+- ファビコン `vite.svg` 404（無害）。
+- `npm run lint` は `eslint.config.js` 欠落で動かない（別途タスク化済み）。
+
+---
+
 ## Project Overview
 Excel ベースの「パワまる工事仮組予定表」を置き換える React SPA。施工メンバーの予定を週次・月次カレンダーで可視化し、Salesforce 商談/点検修繕 + Outlook 予定表 + Firestore リアルタイム共有を統合する。
 
