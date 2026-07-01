@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CalendarProvider, useCalendar } from './context/CalendarContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { MEMBERS } from './data/members';
-import { deleteCalendarEvent } from './services/graphCalendarService';
+import { deleteEventForMember } from './services/graphCalendarService';
 import MainLayout from './components/layout/MainLayout';
 import MonthlyView from './components/schedule/MonthlyView';
 import WeeklyView from './components/schedule/WeeklyView';
@@ -253,7 +253,7 @@ function AppInner() {
               const m = MEMBERS.find((mm) => mm.id === t.memberId);
               const memberEmail = m?.email || t.memberEmail;
               if (memberEmail && !m?.skipOutlookSync) {
-                try { await deleteCalendarEvent(token, memberEmail, t.outlookEventId); } catch { /* ignore */ }
+                try { await deleteEventForMember(token, m || { email: memberEmail }, t.outlookEventId); } catch { /* ignore */ }
               }
             }
           }

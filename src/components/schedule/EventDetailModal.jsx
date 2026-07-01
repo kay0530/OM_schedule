@@ -3,7 +3,7 @@ import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useCalendar } from '../../context/CalendarContext';
-import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../../services/graphCalendarService';
+import { createEventForMember, updateEventForMember, deleteEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 
 // Generate 30-minute interval options from 08:00 to 18:00
@@ -303,11 +303,11 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             const m = MEMBERS.find((mm) => mm.id === a.memberId);
             if (m && !m.skipOutlookSync) {
               if (a.outlookEventId) {
-                const result = await updateCalendarEvent(token, m.email, a.outlookEventId, buildOutlookBody());
+                const result = await updateEventForMember(token, m, a.outlookEventId, buildOutlookBody());
                 if (!result.success) outlookErrors.push(`${m.nameJa}: ${result.error}`);
               } else {
                 // No outlookEventId yet — create one
-                const result = await createCalendarEvent(token, m.email, buildOutlookBody());
+                const result = await createEventForMember(token, m, buildOutlookBody());
                 if (result.success && result.data?.id) {
                   dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, outlookEventId: result.data.id } });
                 } else if (!result.success) {
@@ -323,7 +323,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           const m = MEMBERS.find((mm) => mm.id === memberId);
           let outlookEventId = null;
           if (token && m && !m.skipOutlookSync) {
-            const result = await createCalendarEvent(token, m.email, buildOutlookBody());
+            const result = await createEventForMember(token, m, buildOutlookBody());
             if (result.success) outlookEventId = result.data?.id || null;
             else outlookErrors.push(`${m?.nameJa || memberId}: ${result.error}`);
           }
@@ -359,15 +359,16 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           if (token && a.outlookEventId) {
             const m = MEMBERS.find((mm) => mm.id === a.memberId);
             if (m && !m.skipOutlookSync) {
-              const result = await deleteCalendarEvent(token, m.email, a.outlookEventId);
+              const result = await deleteEventForMember(token, m, a.outlookEventId);
               if (!result.success) outlookErrors.push(`${m.nameJa}: ${result.error}`);
             }
           }
           dispatch({ type: 'DELETE_ASSIGNMENT', payload: a.id });
         }
       } else if (isOutlook && token) {
-        // Pure Outlook event — update only this one
-        const result = await updateCalendarEvent(token, event.memberEmail, event.id, buildOutlookBody());
+        // Pure Outlook event — update only this one (route 瀬戸 via his shared calendar)
+        const evMember = MEMBERS.find((mm) => mm.id === event.memberKey || (mm.email || '').toLowerCase() === (event.memberEmail || '').toLowerCase()) || { email: event.memberEmail };
+        const result = await updateEventForMember(token, evMember, event.id, buildOutlookBody());
         if (!result.success) {
           outlookErrors.push(`${event.memberEmail}: ${result.error}`);
         } else {
@@ -422,7 +423,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             const m = MEMBERS.find((mm) => mm.id === a.memberId);
             const memberEmail = m?.email || a.memberEmail;
             if (memberEmail && !m?.skipOutlookSync) {
-              const result = await deleteCalendarEvent(token, memberEmail, a.outlookEventId);
+              const result = await deleteEventForMember(token, m || { email: memberEmail }, a.outlookEventId);
               if (!result.success) {
                 // 404 = already deleted on Outlook side; treat as success
                 if (!/404/.test(result.error || '')) {
@@ -439,7 +440,8 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
         // Pure Outlook event (not an assignment) — delete just it
         const memberEmail = event.memberEmail || member?.email;
         if (memberEmail) {
-          const result = await deleteCalendarEvent(token, memberEmail, event.id);
+          const evMember = MEMBERS.find((mm) => mm.id === event.memberKey || (mm.email || '').toLowerCase() === (event.memberEmail || '').toLowerCase()) || { email: memberEmail };
+          const result = await deleteEventForMember(token, evMember, event.id);
           if (!result.success && !/404/.test(result.error || '')) {
             outlookErrors.push(`${event.memberEmail}: ${result.error}`);
           } else {

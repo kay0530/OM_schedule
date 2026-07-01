@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { MEMBERS } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { createCalendarEvent } from '../../services/graphCalendarService';
+import { createEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
 
@@ -107,7 +107,7 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
               location: { displayName: location },
               body: { contentType: 'Text', content: bodyContent },
             };
-            const result = await createCalendarEvent(token, member.email, eventData);
+            const result = await createEventForMember(token, member, eventData);
             if (result.success) outlookEventId = result.data?.id || null;
             else outlookErrors.push(`${member.nameJa}: ${result.error}`);
           }

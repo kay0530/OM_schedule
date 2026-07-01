@@ -15,7 +15,7 @@ const MEMBER_EMAIL_MAP = {
   'kaito.yamazaki@altenergy.co.jp': 'yamazaki_k',
   'jigjidsuren.bold@altenergy.co.jp': 'bold_j',
   'taichi.yodogawa@altenergy.co.jp': 'yodogawa_t',
-  'ryota.seto@altenergy.co.jp': 'seto_r',
+  'nstandard.info@gmail.com': 'seto_r',
   'shoichiro.tago@altenergy.co.jp': 'tago_s',
 };
 
@@ -201,7 +201,9 @@ export async function fetchMemberEventsWithBody(accessToken, memberEmail, startD
  */
 export async function fetchAllMembersCalendarEvents(accessToken, members, startDate, endDate) {
   const results = await Promise.allSettled(
-    members.map((m) => fetchMemberCalendarEvents(accessToken, m.outlookEmail || m.email, startDate, endDate))
+    members.map((m) => m.sharedCalendarOwner
+      ? fetchSharedCalendarEvents(accessToken, m, startDate, endDate)
+      : fetchMemberCalendarEvents(accessToken, m.outlookEmail || m.email, startDate, endDate))
   );
 
   const allEvents = [];
@@ -214,7 +216,7 @@ export async function fetchAllMembersCalendarEvents(accessToken, members, startD
       const errorMsg = result.status === 'fulfilled'
         ? result.value.error
         : result.reason?.message || 'Unknown error';
-      errors.push({ member: members[i].outlookEmail, error: errorMsg });
+      errors.push({ member: members[i].outlookEmail || members[i].email, error: errorMsg });
     }
   });
 
@@ -326,4 +328,99 @@ export async function createCalendarEvent(accessToken, memberEmail, eventData) {
     console.error(`Failed to create event for ${memberEmail}:`, err);
     return { success: false, data: null, error: err.message };
   }
+}
+
+// ========== Shared calendar (member 瀬戸) ==========
+// 瀬戸 is not a tenant user; his schedule lives on a personal-account calendar
+// that the operator has added to their own Outlook (canEdit). It is addressed by
+// the operator's LOCAL calendar id — resolved at runtime from the owner address,
+// since the id differs per operator mailbox. Events are ordinary Outlook events,
+// so callers store their ids in the usual `outlookEventId` and the existing
+// reconcile / dedup / chip logic works unchanged.
+
+const sharedCalendarIdCache = new Map(); // ownerAddress(lowercase) -> calendarId
+
+async function resolveSharedCalendarId(accessToken, ownerAddress) {
+  const key = (ownerAddress || '').toLowerCase();
+  if (!key) return null;
+  if (sharedCalendarIdCache.has(key)) return sharedCalendarIdCache.get(key);
+  const data = await graphGet(`${GRAPH_BASE_URL}/me/calendars?$select=id,owner&$top=200`, accessToken);
+  const match = (data.value || []).find((c) => (c.owner?.address || '').toLowerCase() === key);
+  const id = match?.id || null;
+  if (id) sharedCalendarIdCache.set(key, id);
+  return id;
+}
+
+/**
+ * Fetch events from a member's shared calendar (matched by owner address).
+ * Same {success,data,error} shape and internal event shape as
+ * fetchMemberCalendarEvents.
+ */
+export async function fetchSharedCalendarEvents(accessToken, member, startDate, endDate) {
+  try {
+    const calId = await resolveSharedCalendarId(accessToken, member.sharedCalendarOwner);
+    if (!calId) {
+      return { success: false, data: [], error: `${member.nameJa}の共有カレンダーが見つかりません（Outlookに追加してください）` };
+    }
+    const startDateTime = `${startDate}T00:00:00`;
+    const endDateTime = `${endDate}T23:59:59`;
+    const params = new URLSearchParams({ startDateTime, endDateTime, $select: SELECT_FIELDS, $top: '500' });
+    let url = `${GRAPH_BASE_URL}/me/calendars/${encodeURIComponent(calId)}/calendarView?${params}`;
+    const allEvents = [];
+    while (url) {
+      const data = await graphGet(url, accessToken);
+      const events = data.value || [];
+      allEvents.push(...events.map((e) => transformEvent(e, member.email)));
+      url = data['@odata.nextLink'] || null;
+    }
+    return { success: true, data: allEvents, error: null };
+  } catch (err) {
+    console.error(`Failed to fetch shared calendar for ${member.nameJa}:`, err);
+    return { success: false, data: [], error: err.message };
+  }
+}
+
+// ---- Member-aware write wrappers: route sharedCalendarOwner members to the
+//      shared-calendar endpoint, everyone else to /users/{email}. ----
+
+export async function createEventForMember(accessToken, member, eventData) {
+  if (member?.sharedCalendarOwner) {
+    try {
+      const calId = await resolveSharedCalendarId(accessToken, member.sharedCalendarOwner);
+      if (!calId) return { success: false, data: null, error: `${member.nameJa}の共有カレンダーが見つかりません` };
+      const data = await graphPost(`${GRAPH_BASE_URL}/me/calendars/${encodeURIComponent(calId)}/events`, accessToken, eventData);
+      return { success: true, data, error: null };
+    } catch (err) {
+      return { success: false, data: null, error: err.message };
+    }
+  }
+  return createCalendarEvent(accessToken, member.email, eventData);
+}
+
+export async function updateEventForMember(accessToken, member, eventId, updates) {
+  if (member?.sharedCalendarOwner) {
+    try {
+      const calId = await resolveSharedCalendarId(accessToken, member.sharedCalendarOwner);
+      if (!calId) return { success: false, data: null, error: `${member.nameJa}の共有カレンダーが見つかりません` };
+      const data = await graphPatch(`${GRAPH_BASE_URL}/me/calendars/${encodeURIComponent(calId)}/events/${eventId}`, accessToken, updates);
+      return { success: true, data, error: null };
+    } catch (err) {
+      return { success: false, data: null, error: err.message };
+    }
+  }
+  return updateCalendarEvent(accessToken, member.email, eventId, updates);
+}
+
+export async function deleteEventForMember(accessToken, member, eventId) {
+  if (member?.sharedCalendarOwner) {
+    try {
+      const calId = await resolveSharedCalendarId(accessToken, member.sharedCalendarOwner);
+      if (!calId) return { success: false, error: `${member.nameJa}の共有カレンダーが見つかりません` };
+      const r = await graphDelete(`${GRAPH_BASE_URL}/me/calendars/${encodeURIComponent(calId)}/events/${eventId}`, accessToken);
+      return { success: true, error: null, alreadyGone: !!r?.alreadyGone };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+  return deleteCalendarEvent(accessToken, member.email, eventId);
 }
