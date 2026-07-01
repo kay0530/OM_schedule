@@ -2,13 +2,10 @@ import {
   doc,
   getDoc,
   setDoc,
-  deleteDoc,
-  collection,
-  getDocs,
   onSnapshot,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, firebaseAuthReady } from '../firebase';
 
 const COLLECTION_ASSIGNMENTS = 'om-schedule-assignments';
 const COLLECTION_PRESETS = 'om-schedule-filter-presets';
@@ -20,6 +17,31 @@ export function isFirestoreEnabled() {
   return !!db && !!import.meta.env.VITE_FIREBASE_PROJECT_ID;
 }
 
+/**
+ * Set up a real-time listener only AFTER the anonymous session is ready, so the
+ * request carries request.auth (required by the locked rules). Returns a sync
+ * unsubscribe that also cancels a not-yet-attached listener.
+ * @param {() => import('firebase/firestore').Unsubscribe} attach
+ * @returns {() => void}
+ */
+function subscribeWhenReady(attach) {
+  if (!isFirestoreEnabled()) return () => {};
+  let unsub = () => {};
+  let cancelled = false;
+  firebaseAuthReady.then(() => {
+    if (cancelled) return;
+    try {
+      unsub = attach();
+    } catch (e) {
+      console.error('[Firestore] Failed to attach listener:', e);
+    }
+  });
+  return () => {
+    cancelled = true;
+    unsub();
+  };
+}
+
 // ========== Assignments ==========
 
 /**
@@ -28,6 +50,7 @@ export function isFirestoreEnabled() {
 export async function saveAssignments(assignments) {
   if (!isFirestoreEnabled()) return;
   try {
+    await firebaseAuthReady;
     await setDoc(doc(db, COLLECTION_ASSIGNMENTS, 'shared'), {
       assignments,
       updatedAt: serverTimestamp(),
@@ -44,6 +67,7 @@ export async function saveAssignments(assignments) {
 export async function loadAssignments() {
   if (!isFirestoreEnabled()) return null;
   try {
+    await firebaseAuthReady;
     const snap = await getDoc(doc(db, COLLECTION_ASSIGNMENTS, 'shared'));
     return snap.exists() ? snap.data().assignments || [] : null;
   } catch (e) {
@@ -58,19 +82,15 @@ export async function loadAssignments() {
  * @returns {function} Unsubscribe function
  */
 export function subscribeAssignments(callback) {
-  if (!isFirestoreEnabled()) return () => {};
-  try {
-    return onSnapshot(doc(db, COLLECTION_ASSIGNMENTS, 'shared'), (snap) => {
-      if (snap.exists()) {
-        callback(snap.data().assignments || []);
-      }
-    }, (error) => {
-      console.error('[Firestore] Assignment subscription error:', error);
-    });
-  } catch (e) {
-    console.error('[Firestore] Failed to subscribe assignments:', e);
-    return () => {};
-  }
+  return subscribeWhenReady(() =>
+    onSnapshot(
+      doc(db, COLLECTION_ASSIGNMENTS, 'shared'),
+      (snap) => {
+        if (snap.exists()) callback(snap.data().assignments || []);
+      },
+      (error) => console.error('[Firestore] Assignment subscription error:', error)
+    )
+  );
 }
 
 // ========== Filter Presets ==========
@@ -81,6 +101,7 @@ export function subscribeAssignments(callback) {
 export async function saveFilterPresets(presets) {
   if (!isFirestoreEnabled()) return;
   try {
+    await firebaseAuthReady;
     await setDoc(doc(db, COLLECTION_PRESETS, 'shared'), {
       presets,
       updatedAt: serverTimestamp(),
@@ -97,6 +118,7 @@ export async function saveFilterPresets(presets) {
 export async function loadFilterPresets() {
   if (!isFirestoreEnabled()) return null;
   try {
+    await firebaseAuthReady;
     const snap = await getDoc(doc(db, COLLECTION_PRESETS, 'shared'));
     return snap.exists() ? snap.data().presets || [] : null;
   } catch (e) {
@@ -111,17 +133,13 @@ export async function loadFilterPresets() {
  * @returns {function} Unsubscribe function
  */
 export function subscribeFilterPresets(callback) {
-  if (!isFirestoreEnabled()) return () => {};
-  try {
-    return onSnapshot(doc(db, COLLECTION_PRESETS, 'shared'), (snap) => {
-      if (snap.exists()) {
-        callback(snap.data().presets || []);
-      }
-    }, (error) => {
-      console.error('[Firestore] Preset subscription error:', error);
-    });
-  } catch (e) {
-    console.error('[Firestore] Failed to subscribe presets:', e);
-    return () => {};
-  }
+  return subscribeWhenReady(() =>
+    onSnapshot(
+      doc(db, COLLECTION_PRESETS, 'shared'),
+      (snap) => {
+        if (snap.exists()) callback(snap.data().presets || []);
+      },
+      (error) => console.error('[Firestore] Preset subscription error:', error)
+    )
+  );
 }

@@ -17,15 +17,8 @@ import { execSync } from 'child_process';
 import { readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { initializeApp } from 'firebase/app';
-import {
-  getFirestore,
-  collection,
-  doc,
-  getDocs,
-  writeBatch,
-  serverTimestamp,
-} from 'firebase/firestore';
+import { initializeApp, cert, applicationDefault } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -41,19 +34,26 @@ function loadDotEnv(path) {
 }
 loadDotEnv(join(__dirname, '..', '.env'));
 
-const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: process.env.VITE_FIREBASE_APP_ID || '',
-};
-
-if (!firebaseConfig.projectId) {
-  console.error('[sync-sf] VITE_FIREBASE_* env vars are not set — cannot upload. Aborting.');
+// Admin credentials: FIREBASE_SERVICE_ACCOUNT (JSON string; GitHub Secret in CI)
+// or GOOGLE_APPLICATION_CREDENTIALS (path to the service-account .json; local).
+// The Admin SDK bypasses Firestore security rules, so the locked client rules
+// don't block the sync.
+let credential;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    credential = cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT));
+  } catch (e) {
+    console.error('[sync-sf] FIREBASE_SERVICE_ACCOUNT is not valid JSON:', e.message);
+    process.exit(1);
+  }
+} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  credential = applicationDefault();
+} else {
+  console.error('[sync-sf] No Firebase Admin credentials. Set FIREBASE_SERVICE_ACCOUNT (JSON) or GOOGLE_APPLICATION_CREDENTIALS (file path).');
   process.exit(1);
 }
+initializeApp({ credential });
+const adminDb = getFirestore();
 
 /**
  * Execute a SOQL query via sf CLI and return parsed records.
@@ -242,11 +242,9 @@ const COLLECTION_SF_DATA = 'om-schedule-sf-data';
 const CHUNK_SIZE = 200;
 
 async function uploadToFirestore(datasets) {
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const colRef = collection(db, COLLECTION_SF_DATA);
+  const colRef = adminDb.collection(COLLECTION_SF_DATA);
 
-  const batch = writeBatch(db);
+  const batch = adminDb.batch();
   const expectedIds = new Set(['meta']);
   const chunkCounts = {};
 
@@ -260,26 +258,26 @@ async function uploadToFirestore(datasets) {
     chunks.forEach((chunkRecords, i) => {
       const id = `${name}-${i}`;
       expectedIds.add(id);
-      batch.set(doc(colRef, id), { records: chunkRecords });
+      batch.set(colRef.doc(id), { records: chunkRecords });
     });
   }
 
-  batch.set(doc(colRef, 'meta'), {
+  batch.set(colRef.doc('meta'), {
     syncedAt: new Date().toISOString(),
     opportunityCount: datasets.opportunities.length,
     selfConsumptionCount: datasets.selfConsumption.length,
     maintenanceCount: datasets.maintenances.length,
     chunks: chunkCounts,
-    updatedAt: serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
-  const existing = await getDocs(colRef);
+  const existing = await colRef.get();
   existing.forEach((d) => {
     if (!expectedIds.has(d.id)) batch.delete(d.ref);
   });
 
   await batch.commit();
-  console.log(`[sync-sf] Uploaded to Firestore (${firebaseConfig.projectId}/${COLLECTION_SF_DATA}):`);
+  console.log(`[sync-sf] Uploaded to Firestore (${COLLECTION_SF_DATA}):`);
   for (const [name, count] of Object.entries(chunkCounts)) {
     console.log(`  ${name}: ${datasets[name].length} records in ${count} chunk(s)`);
   }
