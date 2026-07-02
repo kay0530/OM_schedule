@@ -1,8 +1,12 @@
 # Construction Schedule (パワまる工事予定表)
 
-## 🔄 セッション引き継ぎ（最終更新: 2026-07-01）
+## 🔄 セッション引き継ぎ（最終更新: 2026-07-02）
 
-**この日の3機能はすべて main にマージ済み・本番稼働中。**
+### 2026-07-02: 「コピペ→Outlook送信でも仮のまま」バグ修正（ワークツリーに未コミット変更あり）
+- **根本原因（多角検証で確定）**: コピペ経路だけ「ADD後にUPDATEでoutlookEventIdリンクを付ける」構造だが、UPDATEフィールドにはsnapshot置換からの保護が無く（保護はpendingAdds/tombstonesのみ）、①モーダル保存の2段dispatch間にeventId無し配列がflush → ②`updatedAt: serverTimestamp()`のせいで自己書込のack echoが「データ変更」としてonSnapshot再発火 → eventIdが剥がれ、re-baseで恒久消失。リンク切れをadoptする機構も無いため「仮」チップ＋ソリッドOutlookチップが並ぶ。
+- **修正4点**: (1) `firestoreService.js` updatedAtをserverTimestamp→`Date.now()`（自己ack echo根絶。updatedAtは全コード未読み取り確認済み）。(2) `AppContext.jsx` に **pendingUpdates** 機構新設: wrappedDispatchでUPDATE系のフィールドを記録(localStorage・TTL60秒)、snapshot受信時にオーバーレイ、**サーバー由来snapshot(fromServer)でのみ** ack/orphan解放/puDirty書き戻し（自己echoでの振動防止）、自書込コミット後は**5秒grace**で解放（ピアのin-flight stale書込は防ぎ、正当な後続編集とは喧嘩しない）。(3) `EventDetailModal.jsx` 未送信ドラフトでチェックOFF時の注意書き＋混在グループ対応。(4) `App.jsx` Ctrl+Vにe.repeatガード（キーリピートでの無自覚複製防止）。
+- **既知の残余リスク（意図的にスコープ外）**: 単一doc全件配列のlast-writer-wins構造自体（根本解決は1件=1doc化）。Graph fetchにタイムアウト無し。
+- 検証: 修正前後で計35エージェントの多角コード検証＋`npm run build`成功。実機での回帰確認（コピペ→送信→✓化）は未実施。
 
 ### 1. 活動報告エクスポート（管理部・唐さん向け）
 - ヘッダー「活動報告」ボタン → 期間指定 → **全メンバーのOutlook予定“本文”の作業報告テンプレ**（移動時間/作業時間/作業者名/作業内容/残タスク）を解析し **1案件1行・記入済みのみ**で `.xlsx` ダウンロード。列に **記載者**（どのメンバーの予定に入っていたか）を含む。

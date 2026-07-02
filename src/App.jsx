@@ -316,7 +316,10 @@ function AppInner() {
     }
     // Ctrl+V: paste at the selected slot (Excel/Outlook model). If no slot is
     // selected yet, arm paste-on-click so the next slot click pastes.
-    if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedEvent) {
+    // e.repeat guard: holding the key auto-repeats — the 2nd firing would see
+    // selectedSlot already cleared by pasteAt and silently arm paste-on-click,
+    // causing an unintended duplicate on the next stray click.
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedEvent && !e.repeat) {
       e.preventDefault();
       if (selectedSlot) {
         pasteAt(selectedSlot.date, selectedSlot.time, selectedSlot.memberId);

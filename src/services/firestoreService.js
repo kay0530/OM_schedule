@@ -3,7 +3,6 @@ import {
   getDoc,
   setDoc,
   onSnapshot,
-  serverTimestamp,
 } from 'firebase/firestore';
 import { db, firebaseAuthReady } from '../firebase';
 
@@ -57,7 +56,12 @@ export async function saveAssignments(assignments) {
     await firebaseAuthReady;
     await setDoc(doc(db, COLLECTION_ASSIGNMENTS, 'shared'), {
       assignments,
-      updatedAt: serverTimestamp(),
+      // Client clock, NOT serverTimestamp(): with serverTimestamp the doc data
+      // differs between the local echo (null) and the server ack (resolved
+      // timestamp), so our own ack re-fires onSnapshot as a *data* change and
+      // replays a possibly-stale array over fresh local UPDATEs (updatedAt is
+      // write-only — nothing reads it, so precision doesn't matter).
+      updatedAt: Date.now(),
     });
     return { ok: true, bytes };
   } catch (e) {
@@ -88,7 +92,10 @@ export async function loadAssignments() {
 
 /**
  * Subscribe to real-time assignment updates
- * @param {function} callback - Called with assignments array on each update
+ * @param {function} callback - Called with (assignments array, meta) on each
+ *   update. meta.fromServer is false for the local write echo
+ *   (hasPendingWrites) — consumers use this to defer pending-update acks
+ *   until the data is server-confirmed.
  * @returns {function} Unsubscribe function
  */
 export function subscribeAssignments(callback) {
@@ -96,7 +103,9 @@ export function subscribeAssignments(callback) {
     onSnapshot(
       doc(db, COLLECTION_ASSIGNMENTS, 'shared'),
       (snap) => {
-        if (snap.exists()) callback(snap.data().assignments || []);
+        if (snap.exists()) {
+          callback(snap.data().assignments || [], { fromServer: !snap.metadata.hasPendingWrites });
+        }
       },
       (error) => console.error('[Firestore] Assignment subscription error:', error)
     )
@@ -114,7 +123,7 @@ export async function saveFilterPresets(presets) {
     await firebaseAuthReady;
     await setDoc(doc(db, COLLECTION_PRESETS, 'shared'), {
       presets,
-      updatedAt: serverTimestamp(),
+      updatedAt: Date.now(),   // client clock — see saveAssignments
     });
   } catch (e) {
     console.error('[Firestore] Failed to save presets:', e);

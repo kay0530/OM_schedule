@@ -347,6 +347,12 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
         for (const a of stayingAssignments) {
           const updates = { ...sharedUpdates };
           if (groupId && !a.groupId) updates.groupId = groupId;
+          // Dispatch field edits BEFORE the Graph round-trip so they persist
+          // even if the tab dies mid-call. The outlookEventId link dispatched
+          // after the create used to be vulnerable to stale-snapshot clobber
+          // (the "stays 仮 forever" bug) — now guarded by the pendingUpdates
+          // overlay in AppContext, which re-applies unacked UPDATE fields to
+          // every incoming snapshot until the write is server-committed.
           dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, ...updates } });
 
           // Outlook update
@@ -780,17 +786,27 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
                 {/* Outlook sync checkbox */}
                 {isAuthenticated && (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={syncToOutlook}
-                      onChange={(e) => setSyncToOutlook(e.target.checked)}
-                      className="w-4 h-4 text-accent rounded border-edge focus:ring-accent"
-                    />
-                    <span className="text-sm text-ink">
-                      {(isOutlook || event.outlookEventId) ? 'Outlookに反映' : 'Outlookに登録'}
-                    </span>
-                  </label>
+                  <div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={syncToOutlook}
+                        onChange={(e) => setSyncToOutlook(e.target.checked)}
+                        className="w-4 h-4 text-accent rounded border-edge focus:ring-accent"
+                      />
+                      <span className="text-sm text-ink">
+                        {(isOutlook || event.outlookEventId) ? 'Outlookに反映' : 'Outlookに登録'}
+                      </span>
+                    </label>
+                    {/* 未送信ドラフトでOFFのまま保存すると無警告でローカル保存のみになる
+                        （「保存＝送信」と誤認しやすい）ため、明示的に案内する。
+                        グループ内の一部メンバーだけ未リンクの混在ケースも拾う */}
+                    {isManualAssignment && groupAssignments.some((ga) => !ga.outlookEventId) && !syncToOutlook && (
+                      <p className="mt-1 ml-6 text-xs text-amber-600 dark:text-amber-400">
+                        OFFのまま保存するとOutlookへ未送信の予定は「仮」のままになります
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (

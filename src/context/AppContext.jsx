@@ -38,10 +38,14 @@ function makeDebouncedSaver(onResult) {
       const p = latestPayload;
       timer = null;
       latestPayload = null;
+      // flushStart: everything dispatched before this instant is contained in
+      // `p` (each dispatch re-arms with fresh state) — lets the result handler
+      // release pendingUpdates entries that this write just committed.
+      const flushStart = Date.now();
       // Single choke point for ALL Firestore writes — retention pruning here
       // covers every path (edits, push-backs, re-based payloads)
       const result = await saveAssignments(pruneOldAssignments(p));
-      if (onResult) onResult(result);
+      if (onResult) onResult(result, flushStart);
     }, FIRESTORE_WRITE_DEBOUNCE_MS);
   };
   fn.cancel = () => {
@@ -64,6 +68,7 @@ const STORAGE_KEYS = {
   settings: 'construction-schedule-settings',
   tombstones: 'construction-schedule-deleted-ids',
   pendingAdds: 'construction-schedule-pending-adds',
+  pendingUpdates: 'construction-schedule-pending-updates',
 };
 
 // How long deleted IDs are remembered to block resurrection from a stale
@@ -105,6 +110,40 @@ function loadTombstones() { return loadIdMap(STORAGE_KEYS.tombstones, TOMBSTONE_
 function persistTombstones(map) { persistIdMap(STORAGE_KEYS.tombstones, map); }
 function loadPendingAdds() { return loadIdMap(STORAGE_KEYS.pendingAdds, PENDING_ADD_TTL_MS); }
 function persistPendingAdds(map) { persistIdMap(STORAGE_KEYS.pendingAdds, map); }
+
+// PendingUpdates: id -> { fields: {field: value}, ts }. Locally UPDATEd fields
+// not yet ack'd by Firestore. Unlike adds (pendingAdds) and deletes
+// (tombstones), field updates had NO protection against being clobbered when a
+// snapshot replaces the whole assignments array — a stale snapshot (own-write
+// ack echo or a peer's whole-array write) could silently revert e.g. the
+// outlookEventId link set right after an Outlook create ("仮のまま" bug).
+const PENDING_UPDATE_TTL_MS = 60 * 1000;
+// After our own write commits, keep the overlay for this grace window to
+// absorb peers' in-flight stale whole-array writes, then let go so we don't
+// fight a peer's legitimate subsequent edit of the same field.
+const PENDING_UPDATE_COMMIT_GRACE_MS = 5 * 1000;
+function loadPendingUpdates() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.pendingUpdates);
+    if (!raw) return new Map();
+    const obj = JSON.parse(raw);
+    const m = new Map();
+    const now = Date.now();
+    for (const [id, entry] of Object.entries(obj)) {
+      if (entry && typeof entry.ts === 'number' && now - entry.ts < PENDING_UPDATE_TTL_MS) m.set(id, entry);
+    }
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+function persistPendingUpdates(map) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.pendingUpdates, JSON.stringify(Object.fromEntries(map)));
+  } catch {
+    // ignore
+  }
+}
 
 const DEFAULT_SETTINGS = {
   workingHours: { start: '08:00', end: '18:00' },
@@ -251,11 +290,34 @@ export function AppProvider({ children }) {
   // preserve when a Firestore snapshot arrives.
   const pendingAddsRef = useRef(loadPendingAdds());
 
+  // PendingUpdates map: id -> {fields, ts}. Field-level UPDATEs this client
+  // made that Firestore may not reflect yet — overlaid onto incoming
+  // snapshots so a stale whole-array snapshot can't revert them.
+  const pendingUpdatesRef = useRef(loadPendingUpdates());
+
   // Debounced Firestore writer — stable across renders (lazy init so the
   // result handler closure is created exactly once; setShareStatus is stable)
   const debouncedSaveRef = useRef(null);
   if (!debouncedSaveRef.current) {
-    debouncedSaveRef.current = makeDebouncedSaver((result) => {
+    debouncedSaveRef.current = makeDebouncedSaver((result, flushStart) => {
+      if (result.ok && flushStart) {
+        // Our write (containing every field dispatched before flushStart)
+        // committed on the server. Don't drop the entries immediately — a
+        // peer's IN-FLIGHT stale array (armed before our write reached them)
+        // can still land 1–2s later and clobber the fields. Stamp committedAt
+        // instead: entries stay overlaid for a short grace window (see
+        // overlayPendingUpdates), then expire, so a peer LEGITIMATELY editing
+        // the same field afterwards isn't fought by a stale overlay.
+        const pu = pendingUpdatesRef.current;
+        let mutated = false;
+        for (const entry of pu.values()) {
+          if (entry.ts <= flushStart && !entry.committedAt) {
+            entry.committedAt = Date.now();
+            mutated = true;
+          }
+        }
+        if (mutated) persistPendingUpdates(pu);
+      }
       if (result.bytes > DOC_SIZE_WARN_BYTES) {
         console.warn(`[Firestore] assignments doc is ${Math.round(result.bytes / 1024)}KB — approaching the 1MiB document limit`);
       }
@@ -276,6 +338,74 @@ export function AppProvider({ children }) {
     if (pendingAddsRef.current.delete(id)) {
       persistPendingAdds(pendingAddsRef.current);
     }
+    if (pendingUpdatesRef.current.delete(id)) {
+      persistPendingUpdates(pendingUpdatesRef.current);
+    }
+  }
+
+  function rememberPendingUpdate(id, fields) {
+    if (!id || !fields) return;
+    const prev = pendingUpdatesRef.current.get(id);
+    pendingUpdatesRef.current.set(id, {
+      fields: { ...(prev ? prev.fields : null), ...fields },
+      ts: Date.now(),
+    });
+    persistPendingUpdates(pendingUpdatesRef.current);
+  }
+
+  // Overlay locally-pending field updates onto a Firestore snapshot array.
+  // Entries are released once a SERVER snapshot carries the same values (ack)
+  // or when they expire (TTL) — mirrors ackPendingAdds/gcPendingAdds.
+  // fromServer=false for the local write echo (hasPendingWrites): the echo
+  // always carries our own values, so acking there would release protection
+  // ~800ms after dispatch and leave a peer's stale in-flight write unguarded.
+  function overlayPendingUpdates(list, fromServer) {
+    const pu = pendingUpdatesRef.current;
+    if (pu.size === 0) return list;
+    const now = Date.now();
+    let mutated = false;
+    for (const [id, entry] of pu) {
+      // Expire: hard TTL, or grace window elapsed after our own server commit
+      // (committedAt is stamped by the debounced-save result handler).
+      if (
+        now - entry.ts >= PENDING_UPDATE_TTL_MS ||
+        (entry.committedAt && now - entry.committedAt >= PENDING_UPDATE_COMMIT_GRACE_MS)
+      ) {
+        pu.delete(id);
+        mutated = true;
+      }
+    }
+    if (fromServer && pu.size > 0) {
+      // Release orphans: ids absent from a server snapshot were deleted by a
+      // peer or pruned by retention — they can never be acked and would keep
+      // puDirty armed (≈800ms self-write loop until TTL). Ids still in
+      // pendingAdds are exempt: the item itself hasn't reached the server yet.
+      const listIds = new Set(list.map((a) => a.id));
+      for (const id of [...pu.keys()]) {
+        if (!listIds.has(id) && !pendingAddsRef.current.has(id)) {
+          pu.delete(id);
+          mutated = true;
+        }
+      }
+    }
+    if (mutated) persistPendingUpdates(pu);
+    if (pu.size === 0) return list;
+    let ackMutated = false;
+    const result = list.map((a) => {
+      const entry = pu.get(a.id);
+      if (!entry) return a;
+      const acked = Object.entries(entry.fields).every(([k, v]) => a[k] === v);
+      if (acked) {
+        if (fromServer) {
+          pu.delete(a.id);
+          ackMutated = true;
+        }
+        return a;
+      }
+      return { ...a, ...entry.fields };
+    });
+    if (ackMutated) persistPendingUpdates(pu);
+    return result;
   }
 
   function rememberPendingAdd(id) {
@@ -339,6 +469,12 @@ export function AppProvider({ children }) {
       } else {
         rememberPendingAdd(id);
       }
+    } else if (action.type === 'UPDATE_ASSIGNMENT') {
+      const { id, ...fields } = action.payload || {};
+      if (id && Object.keys(fields).length > 0) rememberPendingUpdate(id, fields);
+    } else if (action.type === 'UPDATE_ASSIGNMENTS_BULK') {
+      const { ids, updates } = action.payload || {};
+      if (ids && updates) ids.forEach((id) => rememberPendingUpdate(id, updates));
     }
     dispatch(action);
   }, []);
@@ -354,7 +490,11 @@ export function AppProvider({ children }) {
     const runInitialMerge = (firestoreAssignments) => {
       gcPendingAdds();
       const localAssignments = stateRef.current.assignments;
-      const fsArray = filterTombstoned(firestoreAssignments || []);
+      // Initial data is server-confirmed → allow pending-update acks
+      const fsArray = overlayPendingUpdates(filterTombstoned(firestoreAssignments || []), true);
+      // Entries still pending after overlay = the server lacks those field
+      // values — push the merged state back so they aren't lost server-side
+      const puDirty = pendingUpdatesRef.current.size > 0;
       const fsIds = new Set(fsArray.map((a) => a.id));
       ackPendingAdds(fsIds);
       // Only preserve local items that are in the pendingAdds set
@@ -368,10 +508,10 @@ export function AppProvider({ children }) {
         dispatch({ type: 'SET_ASSIGNMENTS', payload: merged });
       }
 
-      // Push back to Firestore if we recovered pending-adds OR filtered
-      // tombstoned items from the server snapshot
+      // Push back to Firestore if we recovered pending-adds/updates OR
+      // filtered tombstoned items from the server snapshot
       const fsHadTombstoned = (firestoreAssignments || []).length !== fsArray.length;
-      if (localPending.length > 0 || fsHadTombstoned) {
+      if (localPending.length > 0 || fsHadTombstoned || puDirty) {
         debouncedSaveRef.current(merged);
       }
 
@@ -395,7 +535,8 @@ export function AppProvider({ children }) {
 
     // Subscribe to real-time updates — trust Firestore as truth, only
     // preserve recently added local items pending FS acknowledgement
-    const unsubscribe = subscribeAssignments((firestoreAssignments) => {
+    const unsubscribe = subscribeAssignments((firestoreAssignments, meta) => {
+      const fromServer = !!meta?.fromServer;
       if (!initialLoadDoneRef.current) {
         // Initial getDoc failed or hasn't resolved yet — treat the first live
         // snapshot as the initial load (bootstraps pendingAdds/tombstone
@@ -405,7 +546,12 @@ export function AppProvider({ children }) {
       }
       gcPendingAdds();
       const localAssignments = stateRef.current.assignments;
-      const fsArray = filterTombstoned(firestoreAssignments);
+      const fsArray = overlayPendingUpdates(filterTombstoned(firestoreAssignments), fromServer);
+      // Unacked field updates remaining on a SERVER snapshot = a peer's write
+      // clobbered them server-side → push back. Never re-arm on our own write
+      // echo — with pending entries that would self-oscillate (write → echo →
+      // write …) until the entries expire.
+      const puDirty = fromServer && pendingUpdatesRef.current.size > 0;
       const fsIds = new Set(fsArray.map((a) => a.id));
       ackPendingAdds(fsIds);
       const localPending = localAssignments.filter(
@@ -416,7 +562,7 @@ export function AppProvider({ children }) {
       fromFirestoreRef.current = true;
       dispatch({ type: 'SET_ASSIGNMENTS', payload: merged });
 
-      if (firestoreAssignments.length !== fsArray.length) {
+      if (firestoreAssignments.length !== fsArray.length || puDirty) {
         debouncedSaveRef.current(merged);
       }
     });
