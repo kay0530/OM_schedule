@@ -28,33 +28,57 @@ function pruneOldAssignments(list) {
   return list.filter((a) => !a.date || a.date >= cutoffISO);
 }
 
-function makeDebouncedSaver(onResult) {
+// getLatest: accessor returning the CURRENT merged assignments array. Retries
+// read it at fire time instead of replaying a captured payload — a stale
+// pre-snapshot array flushed minutes later would erase peers' changes.
+function makeDebouncedSaver(onResult, getLatest) {
   let timer = null;
   let latestPayload = null;
+  let retryDelayMs = 0; // grows exponentially while writes keep failing
+  let flushSeq = 0; // guards against an OLD failed flush re-arming over a newer one
+
+  const flush = async () => {
+    const seq = ++flushSeq;
+    // Retries arm the timer without a payload — read fresh state at fire time
+    const p = latestPayload !== null ? latestPayload : (getLatest ? getLatest() : null);
+    timer = null;
+    latestPayload = null;
+    if (p === null) return;
+    // flushStart: everything dispatched before this instant is contained in
+    // `p` (each dispatch re-arms with fresh state; retries read fresh state) —
+    // lets the result handler release pendingUpdates entries this write committed.
+    const flushStart = Date.now();
+    // Single choke point for ALL Firestore writes — retention pruning here
+    // covers every path (edits, push-backs, re-based payloads)
+    const result = await saveAssignments(pruneOldAssignments(p));
+    if (result.ok) {
+      retryDelayMs = 0;
+    } else if (latestPayload === null && seq === flushSeq) {
+      // Write failed, nothing newer queued, and no newer flush started while
+      // this one was in flight (seq check: an older slow failure must not
+      // re-arm over a newer flush that already succeeded with fresher data).
+      // Re-arm WITHOUT a payload — the retry reads current state at fire time.
+      retryDelayMs = Math.min(retryDelayMs ? retryDelayMs * 2 : 5000, 60000);
+      timer = setTimeout(flush, retryDelayMs);
+    }
+    if (onResult) onResult(result, flushStart);
+  };
+
   const fn = (payload) => {
     latestPayload = payload;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(async () => {
-      const p = latestPayload;
-      timer = null;
-      latestPayload = null;
-      // flushStart: everything dispatched before this instant is contained in
-      // `p` (each dispatch re-arms with fresh state) — lets the result handler
-      // release pendingUpdates entries that this write just committed.
-      const flushStart = Date.now();
-      // Single choke point for ALL Firestore writes — retention pruning here
-      // covers every path (edits, push-backs, re-based payloads)
-      const result = await saveAssignments(pruneOldAssignments(p));
-      if (onResult) onResult(result, flushStart);
-    }, FIRESTORE_WRITE_DEBOUNCE_MS);
+    if (timer) clearTimeout(timer); // also supersedes a pending retry
+    // While writes are failing, new edits / snapshot re-bases respect the
+    // active backoff instead of hammering Firestore every 800ms (local state
+    // is already safe in localStorage; a write can't succeed mid-outage anyway)
+    timer = setTimeout(flush, Math.max(FIRESTORE_WRITE_DEBOUNCE_MS, retryDelayMs));
   };
   fn.cancel = () => {
     if (timer) clearTimeout(timer);
     timer = null;
     latestPayload = null;
   };
-  // True while a write is armed but not yet flushed — used to re-base the
-  // pending payload when a fresher snapshot arrives.
+  // True while a write (or retry) is armed but not yet flushed — used to
+  // re-base the pending payload when a fresher snapshot arrives.
   fn.isPending = () => timer !== null;
   return fn;
 }
@@ -327,7 +351,7 @@ export function AppProvider({ children }) {
           : '共有への保存に失敗しました。この端末には保存されていますが、他のメンバーに変更が届いていない可能性があります。通信状態を確認してください。',
         sizeWarning: result.bytes > DOC_SIZE_WARN_BYTES,
       });
-    });
+    }, () => stateRef.current.assignments);
   }
 
   function rememberDeletion(id) {
