@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { MEMBERS, MEMBER_ORDER } from '../../data/members';
 import { useApp } from '../../context/AppContext';
 import { useCalendar } from '../../context/CalendarContext';
-import { toISODate, getDayNameJa } from '../../utils/dateUtils';
+import { toISODate, getDayNameJa, addDays } from '../../utils/dateUtils';
 import { STATUS_KEYWORDS, STATUS_TYPES } from '../../data/statusTypes';
 
 /**
@@ -152,25 +152,47 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
     return { weeks: grouped, monthLabel: label };
   }, [currentDate, showWeekends]);
 
-  // Index events by "email|date" for fast lookup
+  // Index events by "email|date" for fast lookup.
+  // - Events already shown as an assignment (linked via outlookEventId) are
+  //   skipped — same dedup as Weekly/Daily views.
+  // - All-day events span [start, end) with end = next-day midnight and may
+  //   cover several days (休み etc.) — index every covered date, capped at 62
+  //   days so malformed data can't explode the index.
   const eventIndex = useMemo(() => {
     const idx = {};
+    const linkedIds = new Set(assignments.map((a) => a.outlookEventId).filter(Boolean));
     for (const ev of events) {
-      const dateStr = ev.start?.substring(0, 10);
+      if (linkedIds.has(ev.id)) continue;
+      const startStr = ev.start?.substring(0, 10);
       const email = ev.memberEmail?.toLowerCase();
-      if (!dateStr || !email) continue;
-      const key = `${email}|${dateStr}`;
-      if (!idx[key]) idx[key] = [];
-      idx[key].push(ev);
+      if (!startStr || !email) continue;
+      const push = (dateStr) => {
+        const key = `${email}|${dateStr}`;
+        if (!idx[key]) idx[key] = [];
+        idx[key].push(ev);
+      };
+      if (ev.isAllDay) {
+        const endStr = ev.end ? ev.end.substring(0, 10) : startStr;
+        let d = startStr;
+        let guard = 0;
+        do {
+          push(d);
+          d = addDays(d);
+          guard++;
+        } while (d < endStr && guard < 62);
+      } else {
+        push(startStr);
+      }
     }
     return idx;
-  }, [events]);
+  }, [events, assignments]);
 
-  // Index assignments by "memberId|date" for fast lookup
+  // Index assignments by "memberId|date" for fast lookup (legacy isDelivery
+  // records are hidden everywhere else — hide them here too)
   const assignmentIndex = useMemo(() => {
     const idx = {};
     for (const a of assignments) {
-      if (!a.memberId || !a.date) continue;
+      if (!a.memberId || !a.date || a.isDelivery) continue;
       const key = `${a.memberId}|${a.date}`;
       if (!idx[key]) idx[key] = [];
       idx[key].push(a);
