@@ -135,6 +135,7 @@ scripts/
 
 ### Firestore リアルタイム共有
 - **割当 (assignments)**: `om-schedule-assignments` コレクション → 全ユーザー間で即時同期
+- **保存期間180日**: 割当は単一doc（1MiB上限）のため、書込時に180日より古い割当を自動削除（`ASSIGNMENT_RETENTION_DAYS`、デバウンス保存のflushが唯一の書込経路）。過去予定の正本はOutlook/SF。保存失敗・800KB超警告はヘッダーにピル表示、設定>データ管理にユーザー向け明記あり
 - **フィルタープリセット**: `om-schedule-filter-presets` コレクション → 共有
 - **SFデータ**: `om-schedule-sf-data` コレクション → 同期ワークフローが書込、全ユーザーへ即時配信
 - localStorage フォールバック (Firebase未設定時、SFデータは除く)

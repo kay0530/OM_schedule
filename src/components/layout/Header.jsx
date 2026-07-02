@@ -20,7 +20,7 @@ const THEME_LABELS = { light: 'ライト', dark: 'ダーク', system: 'システ
 export default function Header({ activeView, onNavigate, onToggleSidebar, currentDate, onDateChange, bannerOffset = false }) {
   const { isAuthenticated, account, loading, error, login, logout, getToken } = useAuth();
   const { events, lastSynced, loading: calLoading } = useCalendar();
-  const { settings, dispatch } = useApp();
+  const { settings, dispatch, shareStatus } = useApp();
   const { syncing, syncFromOutlook } = useCalendarSync();
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -205,6 +205,23 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
 
       {/* Right cluster: theme toggle + MS365 connection status */}
       <div className="ml-auto flex items-center gap-2">
+        {/* Shared-save health (Firestore) — details in the tooltip */}
+        {shareStatus?.error && (
+          <span
+            className="text-xs font-medium text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-500/15 px-2 py-0.5 rounded-full cursor-help"
+            title={shareStatus.error}
+          >
+            ⚠ 共有保存エラー
+          </span>
+        )}
+        {!shareStatus?.error && shareStatus?.sizeWarning && (
+          <span
+            className="text-xs font-medium text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 px-2 py-0.5 rounded-full cursor-help"
+            title="共有データが容量上限に近づいています。設定 > データ管理の保存期間を確認するか、開発者に連絡してください。"
+          >
+            ⚠ 容量警告
+          </span>
+        )}
         {/* Theme toggle: light → dark → system */}
         <button
           onClick={cycleTheme}

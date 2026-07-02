@@ -45,18 +45,24 @@ function subscribeWhenReady(attach) {
 // ========== Assignments ==========
 
 /**
- * Save all assignments to Firestore (single document approach for simplicity)
+ * Save all assignments to Firestore (single document approach for simplicity).
+ * @returns {Promise<{ok: boolean, bytes: number, error?: string}>} ok=false on
+ *   write failure (previously swallowed — the caller surfaces it to the user);
+ *   bytes = serialized payload size (single doc caps at 1 MiB).
  */
 export async function saveAssignments(assignments) {
-  if (!isFirestoreEnabled()) return;
+  if (!isFirestoreEnabled()) return { ok: true, bytes: 0 };
+  const bytes = new TextEncoder().encode(JSON.stringify(assignments)).length;
   try {
     await firebaseAuthReady;
     await setDoc(doc(db, COLLECTION_ASSIGNMENTS, 'shared'), {
       assignments,
       updatedAt: serverTimestamp(),
     });
+    return { ok: true, bytes };
   } catch (e) {
     console.error('[Firestore] Failed to save assignments:', e);
+    return { ok: false, bytes, error: e?.message || String(e) };
   }
 }
 

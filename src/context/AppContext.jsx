@@ -1,24 +1,47 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useReducer, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createContext, useContext, useReducer, useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { isFirestoreEnabled, saveAssignments, loadAssignments, subscribeAssignments } from '../services/firestoreService';
 import { WORK_CATEGORY_IDS } from '../data/workCategories';
+import { toISODate } from '../utils/dateUtils';
 
 // Debounce Firestore writes — batches rapid edits (e.g. multi-member assign,
 // Outlook reconcile sweep) into a single write to avoid hitting the
 // "Write stream exhausted maximum allowed queued writes" error.
 const FIRESTORE_WRITE_DEBOUNCE_MS = 800;
 
-function makeDebouncedSaver() {
+// Retention policy: assignments older than this are pruned from the shared
+// Firestore doc on every write. The whole team's assignments live in ONE doc
+// (hard cap 1 MiB) — without pruning it fills up within 1-2 years and every
+// save starts failing silently. Past events remain in Outlook (and Salesforce),
+// which are the systems of record — only the app's scheduling metadata is
+// dropped. Surfaced to users in Settings > データ管理.
+export const ASSIGNMENT_RETENTION_DAYS = 180;
+
+// Warn well before the 1 MiB (1,048,576 B) Firestore document limit.
+const DOC_SIZE_WARN_BYTES = 800_000;
+
+function pruneOldAssignments(list) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - ASSIGNMENT_RETENTION_DAYS);
+  const cutoffISO = toISODate(cutoff);
+  // Items without a date are kept (defensive — assignments always carry one)
+  return list.filter((a) => !a.date || a.date >= cutoffISO);
+}
+
+function makeDebouncedSaver(onResult) {
   let timer = null;
   let latestPayload = null;
   const fn = (payload) => {
     latestPayload = payload;
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
+    timer = setTimeout(async () => {
       const p = latestPayload;
       timer = null;
       latestPayload = null;
-      saveAssignments(p);
+      // Single choke point for ALL Firestore writes — retention pruning here
+      // covers every path (edits, push-backs, re-based payloads)
+      const result = await saveAssignments(pruneOldAssignments(p));
+      if (onResult) onResult(result);
     }, FIRESTORE_WRITE_DEBOUNCE_MS);
   };
   fn.cancel = () => {
@@ -213,6 +236,12 @@ export function AppProvider({ children }) {
   stateRef.current = state;
   const initialLoadDoneRef = useRef(false);
 
+  // Shared-save health, shown in the Header. error: the last debounced write
+  // failed (edits reach localStorage but NOT other members — previously this
+  // was silently swallowed). sizeWarning: the shared doc is approaching
+  // Firestore's 1 MiB hard cap despite retention pruning.
+  const [shareStatus, setShareStatus] = useState({ error: null, sizeWarning: false });
+
   // Tombstone map: id -> timestamp. Used to block resurrection of deleted
   // assignments by stale Firestore snapshots / late callbacks.
   const tombstonesRef = useRef(loadTombstones());
@@ -222,8 +251,22 @@ export function AppProvider({ children }) {
   // preserve when a Firestore snapshot arrives.
   const pendingAddsRef = useRef(loadPendingAdds());
 
-  // Debounced Firestore writer — stable across renders
-  const debouncedSaveRef = useRef(makeDebouncedSaver());
+  // Debounced Firestore writer — stable across renders (lazy init so the
+  // result handler closure is created exactly once; setShareStatus is stable)
+  const debouncedSaveRef = useRef(null);
+  if (!debouncedSaveRef.current) {
+    debouncedSaveRef.current = makeDebouncedSaver((result) => {
+      if (result.bytes > DOC_SIZE_WARN_BYTES) {
+        console.warn(`[Firestore] assignments doc is ${Math.round(result.bytes / 1024)}KB — approaching the 1MiB document limit`);
+      }
+      setShareStatus({
+        error: result.ok
+          ? null
+          : '共有への保存に失敗しました。この端末には保存されていますが、他のメンバーに変更が届いていない可能性があります。通信状態を確認してください。',
+        sizeWarning: result.bytes > DOC_SIZE_WARN_BYTES,
+      });
+    });
+  }
 
   function rememberDeletion(id) {
     if (!id) return;
@@ -445,8 +488,9 @@ export function AppProvider({ children }) {
       assignments: state.assignments,
       settings: state.settings,
       dispatch: wrappedDispatch,
+      shareStatus,
     }),
-    [state.assignments, state.settings, wrappedDispatch]
+    [state.assignments, state.settings, wrappedDispatch, shareStatus]
   );
 
   return (

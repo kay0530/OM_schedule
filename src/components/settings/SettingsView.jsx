@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useApp } from '../../context/AppContext';
+import { useApp, ASSIGNMENT_RETENTION_DAYS } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { loadAzureConfig, saveAzureConfig, DEFAULT_AZURE_CONFIG } from '../../services/msalService';
 import { getGithubToken, saveGithubToken } from '../../services/githubSyncService';
@@ -431,6 +431,16 @@ export default function SettingsView() {
           <div className="bg-canvas rounded-lg p-3">
             <p className="text-xs text-ink-muted">現在の割り当て件数</p>
             <p className="text-sm font-medium text-ink mt-0.5">{assignments.length} 件</p>
+          </div>
+
+          {/* Retention policy — keep users aware that old data is auto-pruned */}
+          <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">データ保存期間: {ASSIGNMENT_RETENTION_DAYS}日（約半年）</p>
+            <p className="text-xs text-amber-800/80 dark:text-amber-200/80 mt-1 leading-relaxed">
+              {ASSIGNMENT_RETENTION_DAYS}日より前の割り当てデータは、共有データの容量上限を守るため自動的に削除されます。
+              Outlookに登録した予定はOutlookカレンダーにそのまま残ります。
+              過去の割り当てを記録として残したい場合は、下のJSONエクスポートをご利用ください。
+            </p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
