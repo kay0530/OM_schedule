@@ -20,6 +20,9 @@ const START_HOUR = 0;
 const END_HOUR = 24;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 
+// Stable empty array for index misses (referential identity across renders)
+const EMPTY_LIST = [];
+
 function detectStatusType(title) {
   if (!title) return null;
   for (const [statusId, keywords] of Object.entries(STATUS_KEYWORDS)) {
@@ -30,7 +33,7 @@ function detectStatusType(title) {
   return null;
 }
 
-export default function DailyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, activeEventId, onSlotClick, onSlotDoubleClick, selectedSlotKey }) {
+export default function DailyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, onMoveAssignment, activeEventId, onSlotClick, onSlotDoubleClick, selectedSlotKey }) {
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
 
@@ -84,53 +87,68 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
     return s;
   }, [assignments]);
 
+  // ---- Per-member index for the displayed date ----
+  // Same pattern as WeeklyView's dayIndex: build the buckets once per data
+  // change instead of re-filtering the full arrays ~3× per member per render.
+  const dayIndex = useMemo(() => {
+    const evTimed = new Map();     // email -> timed Outlook events on dateStr
+    const evAllDay = new Map();    // email -> all-day Outlook events covering dateStr
+    const asgTimed = new Map();    // memberId -> timed assignments
+    const asgAllDay = new Map();   // memberId -> all-day assignments
+    const asgDelivery = new Map(); // memberId -> delivery assignments
+    const push = (map, key, item) => {
+      const arr = map.get(key);
+      if (arr) arr.push(item);
+      else map.set(key, [item]);
+    };
+    for (const e of events) {
+      if (linkedOutlookIds.has(e.id)) continue; // already shown as assignment
+      const email = (e.memberEmail || '').toLowerCase();
+      if (!email || !e.start) continue;
+      if (e.isAllDay) {
+        // Half-open [start, end); broken data (end <= start) still shows on
+        // its start day, matching WeeklyView's index behavior
+        const eventStart = e.start.substring(0, 10);
+        const eventEnd = e.end ? e.end.substring(0, 10) : eventStart;
+        const covered = dateStr >= eventStart
+          && (dateStr < eventEnd || (eventEnd <= eventStart && dateStr === eventStart));
+        if (covered) push(evAllDay, email, e);
+      } else if (e.start.substring(0, 10) === dateStr) {
+        push(evTimed, email, e);
+      }
+    }
+    for (const a of assignments) {
+      if (!a.memberId || a.date !== dateStr) continue;
+      if (a.isDelivery) push(asgDelivery, a.memberId, a);
+      else if (a.isAllDay) push(asgAllDay, a.memberId, a);
+      else push(asgTimed, a.memberId, a);
+    }
+    return { evTimed, evAllDay, asgTimed, asgAllDay, asgDelivery };
+  }, [events, assignments, dateStr, linkedOutlookIds]);
+
   const getEventsForMember = useCallback(
-    (memberEmail) => {
-      return events.filter((e) => {
-        if (e.isAllDay) return false;
-        if (linkedOutlookIds.has(e.id)) return false;
-        return e.start.substring(0, 10) === dateStr && e.memberEmail === memberEmail.toLowerCase();
-      });
-    },
-    [events, dateStr, linkedOutlookIds]
+    (memberEmail) => dayIndex.evTimed.get(memberEmail.toLowerCase()) || EMPTY_LIST,
+    [dayIndex]
   );
 
   const getAllDayEventsForMember = useCallback(
-    (memberEmail) => {
-      return events.filter((e) => {
-        if (!e.isAllDay) return false;
-        if (linkedOutlookIds.has(e.id)) return false; // already shown as assignment
-        const eventStart = e.start.substring(0, 10);
-        const eventEnd = e.end ? e.end.substring(0, 10) : eventStart;
-        return dateStr >= eventStart && dateStr < eventEnd && e.memberEmail === memberEmail.toLowerCase();
-      });
-    },
-    [events, dateStr, linkedOutlookIds]
+    (memberEmail) => dayIndex.evAllDay.get(memberEmail.toLowerCase()) || EMPTY_LIST,
+    [dayIndex]
   );
 
   const getAssignmentsForMember = useCallback(
-    (memberId) => {
-      return assignments.filter(
-        (a) => a.memberId === memberId && a.date === dateStr && !a.isDelivery && !a.isAllDay
-      );
-    },
-    [assignments, dateStr]
+    (memberId) => dayIndex.asgTimed.get(memberId) || EMPTY_LIST,
+    [dayIndex]
   );
 
   const getAllDayAssignmentsForMember = useCallback(
-    (memberId) => {
-      return assignments.filter(
-        (a) => a.memberId === memberId && a.date === dateStr && a.isAllDay && !a.isDelivery
-      );
-    },
-    [assignments, dateStr]
+    (memberId) => dayIndex.asgAllDay.get(memberId) || EMPTY_LIST,
+    [dayIndex]
   );
 
   const getDeliveriesForMember = useCallback(
-    (memberId) => {
-      return assignments.filter((a) => a.memberId === memberId && a.date === dateStr && a.isDelivery);
-    },
-    [assignments, dateStr]
+    (memberId) => dayIndex.asgDelivery.get(memberId) || EMPTY_LIST,
+    [dayIndex]
   );
 
   const getMemberStatus = useCallback(
@@ -191,17 +209,17 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
         const clampedEnd = Math.min(hour * 60 + durationMinutes, END_HOUR * 60);
         const newEndTime = `${String(Math.floor(clampedEnd / 60)).padStart(2, '0')}:${String(clampedEnd % 60).padStart(2, '0')}`;
         const targetMember = MEMBERS.find((m) => m.id === memberId);
-        dispatch({
-          type: 'UPDATE_ASSIGNMENT',
-          payload: {
-            id: eventId,
-            date: dateStr,
-            startTime: newStartTime,
-            endTime: newEndTime,
-            memberId,
-            memberEmail: targetMember?.email || originalEvent?.memberEmail,
-          },
-        });
+        const movePayload = {
+          id: eventId,
+          date: dateStr,
+          startTime: newStartTime,
+          endTime: newEndTime,
+          memberId,
+          memberEmail: targetMember?.email || originalEvent?.memberEmail,
+        };
+        // onMoveAssignment mirrors the move to Outlook for synced assignments
+        if (onMoveAssignment) onMoveAssignment(movePayload);
+        else dispatch({ type: 'UPDATE_ASSIGNMENT', payload: movePayload });
         return;
       }
       const startTime = `${String(hour).padStart(2, '0')}:00`;
@@ -236,8 +254,10 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
 
   const handleResizeEnd = useCallback((event, newEndTime) => {
     if (!event.opportunityName) return;
-    dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: event.id, endTime: newEndTime } });
-  }, [dispatch]);
+    const payload = { id: event.id, endTime: newEndTime };
+    if (onMoveAssignment) onMoveAssignment(payload);
+    else dispatch({ type: 'UPDATE_ASSIGNMENT', payload });
+  }, [dispatch, onMoveAssignment]);
 
   function handleSlotSingleClick(hour, minute, memberId) {
     const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;

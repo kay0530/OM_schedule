@@ -443,6 +443,28 @@ export async function updateEventForMember(accessToken, member, eventId, updates
   return updateCalendarEvent(accessToken, member.email, eventId, updates);
 }
 
+/**
+ * Fetch a single event (subject / plain-text body / location) for a member.
+ * Used to carry the original content over when a cross-member move re-creates
+ * the event on another calendar — the body holds the crew's 作業報告 text
+ * that the 活動報告 export parses, which must not be lost.
+ */
+export async function fetchEventForMember(accessToken, member, eventId) {
+  const select = '$select=subject,body,location';
+  try {
+    if (member?.sharedCalendarOwner) {
+      const calId = await resolveSharedCalendarId(accessToken, member.sharedCalendarOwner);
+      if (!calId) return { success: false, data: null, error: `${member.nameJa}の共有カレンダーが見つかりません` };
+      const data = await graphGetTextBody(`${GRAPH_BASE_URL}/me/calendars/${encodeURIComponent(calId)}/events/${eventId}?${select}`, accessToken);
+      return { success: true, data, error: null };
+    }
+    const data = await graphGetTextBody(`${GRAPH_BASE_URL}/users/${member.email}/events/${eventId}?${select}`, accessToken);
+    return { success: true, data, error: null };
+  } catch (err) {
+    return { success: false, data: null, error: err.message };
+  }
+}
+
 export async function deleteEventForMember(accessToken, member, eventId) {
   if (member?.sharedCalendarOwner) {
     try {

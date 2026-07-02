@@ -3,7 +3,10 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CalendarProvider, useCalendar } from './context/CalendarContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { MEMBERS } from './data/members';
-import { deleteEventForMember } from './services/graphCalendarService';
+import { createEventForMember, updateEventForMember, deleteEventForMember, fetchEventForMember } from './services/graphCalendarService';
+import { buildEventBody } from './services/eventBodyTemplate';
+import { addDays, toGraphDateTime } from './utils/dateUtils';
+import { ToastProvider, useToastContext } from './components/shared/Toast';
 import MainLayout from './components/layout/MainLayout';
 import MonthlyView from './components/schedule/MonthlyView';
 import WeeklyView from './components/schedule/WeeklyView';
@@ -25,8 +28,10 @@ function AuthenticatedApp() {
     <CalendarProvider>
       <AppProvider>
         <SfDataProvider>
-          <ThemeApplier />
-          <AppInner />
+          <ToastProvider>
+            <ThemeApplier />
+            <AppInner />
+          </ToastProvider>
         </SfDataProvider>
       </AppProvider>
     </CalendarProvider>
@@ -37,6 +42,7 @@ function AppInner() {
   const { assignments, dispatch } = useApp();
   const { events, setEvents } = useCalendar();
   const { isAuthenticated, getToken } = useAuth();
+  const { addToast } = useToastContext();
 
   // Reconcile assignments with edits made on the Outlook side: when an
   // Outlook event matching an assignment's outlookEventId differs from the
@@ -239,6 +245,136 @@ function AppInner() {
     setSelectedEvent(null);
   }
 
+  // Drag-move / resize of an assignment. Dispatches the local update
+  // optimistically, then mirrors the change to Outlook for synced assignments —
+  // without this the reconcile sweep pulls the (unmoved) Outlook times back and
+  // the move is silently undone at the next Outlook同期.
+  const movesInFlightRef = useRef(new Set());
+  const handleMoveAssignment = useCallback(async (payload) => {
+    const a = assignmentsRef.current.find((x) => x.id === payload.id);
+    if (!a) return;
+    // One mirror at a time per assignment: a second drag mid-flight would read
+    // a stale outlookEventId and strand a duplicate on the intermediate
+    // member's calendar (Graph DELETE 404 masks the double-delete).
+    if (a.outlookEventId && movesInFlightRef.current.has(a.id)) {
+      addToast('前の移動をOutlookへ反映中です。完了後にもう一度お試しください。', 'warning');
+      return;
+    }
+    const prev = {
+      date: a.date,
+      startTime: a.startTime,
+      endTime: a.endTime,
+      memberId: a.memberId,
+      memberEmail: a.memberEmail,
+    };
+    dispatch({ type: 'UPDATE_ASSIGNMENT', payload });
+
+    if (!a.outlookEventId) return; // draft (仮) — nothing to mirror
+
+    movesInFlightRef.current.add(a.id);
+    try {
+      const revert = (reason) => {
+        dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, ...prev } });
+        addToast(`Outlookへ反映できなかったため移動を元に戻しました。\n${reason}`, 'error', 0);
+      };
+
+      const token = isAuthenticated ? await getToken().catch(() => null) : null;
+      if (!token) {
+        revert('MS365にログインしていません。ログイン後にやり直してください。');
+        return;
+      }
+
+      const newDate = payload.date || a.date;
+      const newStart = payload.startTime || a.startTime;
+      const newEnd = payload.endTime || a.endTime;
+      // Timed-grid moves only reach here, but keep the all-day payload correct
+      // defensively (midnight → next-day midnight per Graph convention)
+      const timePatch = a.isAllDay
+        ? {
+            isAllDay: true,
+            start: { dateTime: `${newDate}T00:00:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: `${addDays(newDate)}T00:00:00`, timeZone: 'Asia/Tokyo' },
+          }
+        : {
+            isAllDay: false,
+            start: { dateTime: `${newDate}T${newStart}:00`, timeZone: 'Asia/Tokyo' },
+            end: { dateTime: toGraphDateTime(newDate, newEnd), timeZone: 'Asia/Tokyo' },
+          };
+      // Cache times mirroring timePatch — the cached Outlook copy MUST be
+      // updated after a successful write, or the reconcile sweep (which runs
+      // on every events change) reads the stale cache and reverts the move.
+      const cacheStart = a.isAllDay ? `${newDate}T00:00:00` : `${newDate}T${newStart}:00`;
+      const cacheEnd = a.isAllDay ? `${addDays(newDate)}T00:00:00` : toGraphDateTime(newDate, newEnd);
+
+      const newMemberId = payload.memberId || a.memberId;
+      if (newMemberId === a.memberId) {
+        // Same calendar — a single PATCH moves it
+        const m = MEMBERS.find((mm) => mm.id === a.memberId) || { email: a.memberEmail };
+        const result = await updateEventForMember(token, m, a.outlookEventId, timePatch);
+        if (!result.success) {
+          revert(result.error);
+        } else {
+          setEvents((prevEvents) => prevEvents.map((e) =>
+            e.id === a.outlookEventId ? { ...e, start: cacheStart, end: cacheEnd, isAllDay: !!a.isAllDay } : e
+          ));
+        }
+        return;
+      }
+
+      // Cross-member: the event lives in the source member's calendar, so it
+      // must be re-created on the target and deleted from the source.
+      // Create FIRST so the event can never be lost (worst case: a duplicate,
+      // which we surface below).
+      const targetMember = MEMBERS.find((mm) => mm.id === newMemberId);
+      if (!targetMember) {
+        revert('移動先のメンバーが見つかりません。');
+        return;
+      }
+      const sourceMember = MEMBERS.find((mm) => mm.id === a.memberId) || { email: a.memberEmail };
+
+      // Carry the ORIGINAL event content over — the body holds the crew's
+      // 作業報告 text (parsed by the 活動報告 export) and may have been edited
+      // in Outlook after creation. Fall back to local fields if the read fails
+      // (the move itself still works; only content carry-over degrades).
+      let subject = a.opportunityName || a.title || '';
+      let bodyContent = buildEventBody(a.scheduleMemo || '');
+      let locationName = a.address || '';
+      const orig = await fetchEventForMember(token, sourceMember, a.outlookEventId);
+      if (orig.success && orig.data) {
+        if (orig.data.subject) subject = orig.data.subject;
+        if (orig.data.body?.content) bodyContent = orig.data.body.content;
+        if (orig.data.location?.displayName != null) locationName = orig.data.location.displayName;
+      }
+
+      const created = await createEventForMember(token, targetMember, {
+        subject,
+        ...timePatch,
+        location: { displayName: locationName },
+        body: { contentType: 'Text', content: bodyContent },
+      });
+      if (!created.success) {
+        revert(created.error);
+        return;
+      }
+      const oldOutlookId = a.outlookEventId;
+      dispatch({ type: 'UPDATE_ASSIGNMENT', payload: { id: a.id, outlookEventId: created.data?.id || null } });
+      const del = await deleteEventForMember(token, sourceMember, oldOutlookId);
+      if (del.success) {
+        // Prune the cached copy so the old member's column doesn't show a ghost
+        setEvents((prevEvents) => prevEvents.filter((e) => e.id !== oldOutlookId));
+      } else {
+        addToast(
+          `移動先(${targetMember.nameJa})のOutlookには登録しましたが、元の担当者(${sourceMember.nameJa || sourceMember.email})の旧予定を削除できませんでした。Outlook上で削除してください。\n${del.error}`,
+          'error',
+          0
+        );
+      }
+    } finally {
+      movesInFlightRef.current.delete(a.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, isAuthenticated, getToken, setEvents, addToast]);
+
   // Keyboard shortcuts: Escape, Ctrl+C, Ctrl+V, Delete
   function handleKeyDown(e) {
     // Don't hijack typing inside form fields
@@ -284,7 +420,7 @@ function AppInner() {
             }
           }
           if (failed.length > 0) {
-            alert(`Outlook側の削除に失敗しました:\n${failed.join('\n')}\n（予定がOutlookに残っています。再同期で再表示された場合はOutlook上で削除してください）`);
+            addToast(`Outlook側の削除に失敗しました:\n${failed.join('\n')}\n（予定がOutlookに残っています。再同期で再表示された場合はOutlook上で削除してください）`, 'error', 0);
           }
         })();
         for (const t of targets) {
@@ -340,6 +476,7 @@ function AppInner() {
       onDropJob: handleDropJob,
       onEventClick: handleEventClick,
       onEventDoubleClick: handleEventDoubleClick,
+      onMoveAssignment: handleMoveAssignment,
       activeEventId: activeEvent?.id || null,
       selectedSlotKey,
     };

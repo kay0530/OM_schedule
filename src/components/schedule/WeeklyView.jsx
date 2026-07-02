@@ -18,6 +18,10 @@ import StatusOverlay from './StatusOverlay';
 import AllDayOverlay from './AllDayOverlay';
 import FilterPopover from '../shared/FilterPopover';
 
+// Stable empty array for index misses — keeps referential identity so
+// per-cell getters don't hand out fresh arrays every render
+const EMPTY_LIST = [];
+
 // Time grid constants
 const HOUR_HEIGHT = 60; // pixels per hour
 const START_HOUR = 0;
@@ -52,7 +56,7 @@ function detectStatusType(title) {
  * Shows days of the week as columns, 30-minute time slots as rows,
  * with member filter chips and events positioned by time.
  */
-export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, activeEventId, onSlotClick, onSlotDoubleClick, selectedSlotKey }) {
+export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, onMoveAssignment, activeEventId, onSlotClick, onSlotDoubleClick, selectedSlotKey }) {
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
 
@@ -159,66 +163,81 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     return s;
   }, [assignments]);
 
+  // ---- Per-day index ----
+  // The grid does ~7 lookups per member-day cell; filtering the full
+  // events/assignments arrays inside each getter was O(n) × ~540 calls per
+  // render and made drag interactions stutter once the synced Outlook range
+  // filled up. Build the day buckets once per data change instead — the
+  // getters below become O(1) lookups with unchanged signatures.
+  const dayIndex = useMemo(() => {
+    const evTimed = new Map();     // `${email}|${date}` -> timed Outlook events
+    const evAllDay = new Map();    // `${email}|${date}` -> all-day Outlook events
+    const asgTimed = new Map();    // `${memberId}|${date}` -> timed assignments
+    const asgAllDay = new Map();   // `${memberId}|${date}` -> all-day assignments
+    const asgDelivery = new Map(); // `${memberId}|${date}` -> delivery assignments
+    const push = (map, key, item) => {
+      const arr = map.get(key);
+      if (arr) arr.push(item);
+      else map.set(key, [item]);
+    };
+    for (const e of events) {
+      if (linkedOutlookIds.has(e.id)) continue; // already shown as assignment
+      const email = (e.memberEmail || '').toLowerCase();
+      const startStr = e.start ? e.start.substring(0, 10) : '';
+      if (!email || !startStr) continue;
+      if (e.isAllDay) {
+        // Half-open [start, end): Graph all-day events end at next-day
+        // midnight and may span months (long leave) — the event's own start
+        // can lie far before the displayed week, so test coverage against the
+        // week's 7 dates instead of expanding from the event start. Broken
+        // data (end <= start) still shows on its start day.
+        const endStr = e.end ? e.end.substring(0, 10) : startStr;
+        for (const wd of weekDates) {
+          const ds = toISODate(wd);
+          if (ds >= startStr && (ds < endStr || (endStr <= startStr && ds === startStr))) {
+            push(evAllDay, `${email}|${ds}`, e);
+          }
+        }
+      } else {
+        push(evTimed, `${email}|${startStr}`, e);
+      }
+    }
+    for (const a of assignments) {
+      if (!a.memberId || !a.date) continue;
+      if (!isAssignmentVisibleByCategory(a)) continue;
+      const key = `${a.memberId}|${a.date}`;
+      if (a.isDelivery) push(asgDelivery, key, a);
+      else if (a.isAllDay) push(asgAllDay, key, a);
+      else push(asgTimed, key, a);
+    }
+    return { evTimed, evAllDay, asgTimed, asgAllDay, asgDelivery };
+    // isAssignmentVisibleByCategory is a stable closure over hiddenCategoryIds
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, assignments, linkedOutlookIds, hiddenCategoryIds, weekDates]);
+
   // Get timed events for a member + date (from CalendarContext)
   const getEventsForMemberDate = useCallback(
-    (memberEmail, date) => {
-      const dateStr = toISODate(date);
-      return events.filter((e) => {
-        if (e.isAllDay) return false;
-        if (linkedOutlookIds.has(e.id)) return false; // already shown as assignment
-        const eventDate = e.start.substring(0, 10);
-        return eventDate === dateStr && e.memberEmail === memberEmail.toLowerCase();
-      });
-    },
-    [events, linkedOutlookIds]
+    (memberEmail, date) => dayIndex.evTimed.get(`${memberEmail.toLowerCase()}|${toISODate(date)}`) || EMPTY_LIST,
+    [dayIndex]
   );
 
   // Get all-day events for a member + date
   const getAllDayEventsForMemberDate = useCallback(
-    (memberEmail, date) => {
-      const dateStr = toISODate(date);
-      return events.filter((e) => {
-        if (!e.isAllDay) return false;
-        if (linkedOutlookIds.has(e.id)) return false; // already shown as assignment
-        const eventStart = e.start.substring(0, 10);
-        const eventEnd = e.end ? e.end.substring(0, 10) : eventStart;
-        return dateStr >= eventStart && dateStr < eventEnd && e.memberEmail === memberEmail.toLowerCase();
-      });
-    },
-    [events, linkedOutlookIds]
+    (memberEmail, date) => dayIndex.evAllDay.get(`${memberEmail.toLowerCase()}|${toISODate(date)}`) || EMPTY_LIST,
+    [dayIndex]
   );
 
   // Get all-day ASSIGNMENTS for a member + date (rendered in the 終日 row)
   const getAllDayAssignmentsForMemberDate = useCallback(
-    (memberId, date) => {
-      const dateStr = toISODate(date);
-      return assignments.filter(
-        (a) =>
-          a.memberId === memberId &&
-          a.date === dateStr &&
-          a.isAllDay &&
-          !a.isDelivery &&
-          isAssignmentVisibleByCategory(a)
-      );
-    },
-    [assignments, hiddenCategoryIds]
+    (memberId, date) => dayIndex.asgAllDay.get(`${memberId}|${toISODate(date)}`) || EMPTY_LIST,
+    [dayIndex]
   );
 
   // Get assignments for a member + date (from AppContext), excluding deliveries
   // AND excluding all-day items (those are shown in the 終日 row)
   const getAssignmentsForMemberDate = useCallback(
-    (memberId, date) => {
-      const dateStr = toISODate(date);
-      return assignments.filter(
-        (a) =>
-          a.memberId === memberId &&
-          a.date === dateStr &&
-          !a.isDelivery &&
-          !a.isAllDay &&
-          isAssignmentVisibleByCategory(a)
-      );
-    },
-    [assignments, hiddenCategoryIds]
+    (memberId, date) => dayIndex.asgTimed.get(`${memberId}|${toISODate(date)}`) || EMPTY_LIST,
+    [dayIndex]
   );
 
   // Build combined all-day items (Outlook + assignment) for the full-day
@@ -255,17 +274,8 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
 
   // Get delivery assignments for a member + date
   const getDeliveriesForMemberDate = useCallback(
-    (memberId, date) => {
-      const dateStr = toISODate(date);
-      return assignments.filter(
-        (a) =>
-          a.memberId === memberId &&
-          a.date === dateStr &&
-          a.isDelivery &&
-          isAssignmentVisibleByCategory(a)
-      );
-    },
-    [assignments, hiddenCategoryIds]
+    (memberId, date) => dayIndex.asgDelivery.get(`${memberId}|${toISODate(date)}`) || EMPTY_LIST,
+    [dayIndex]
   );
 
   // Check if any all-day events (Outlook OR assignment) exist in visible data
@@ -353,17 +363,18 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
         const newEndTime = `${String(newEndHour).padStart(2, '0')}:${String(newEndMin).padStart(2, '0')}`;
 
         const targetMember = MEMBERS.find((m) => m.id === memberId);
-        dispatch({
-          type: 'UPDATE_ASSIGNMENT',
-          payload: {
-            id: eventId,
-            date: newDate,
-            startTime: newStartTime,
-            endTime: newEndTime,
-            memberId: memberId,
-            memberEmail: targetMember?.email || originalEvent?.memberEmail,
-          },
-        });
+        const movePayload = {
+          id: eventId,
+          date: newDate,
+          startTime: newStartTime,
+          endTime: newEndTime,
+          memberId: memberId,
+          memberEmail: targetMember?.email || originalEvent?.memberEmail,
+        };
+        // onMoveAssignment mirrors the move to Outlook for synced assignments
+        // (plain dispatch would be silently reverted by the reconcile sweep)
+        if (onMoveAssignment) onMoveAssignment(movePayload);
+        else dispatch({ type: 'UPDATE_ASSIGNMENT', payload: movePayload });
         return;
       }
 
@@ -379,17 +390,14 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     }
   }
 
-  // Handle resize end from EventBlock
+  // Handle resize end from EventBlock (Outlook-synced assignments get a PATCH
+  // via onMoveAssignment — see the drop handler note)
   const handleResizeEnd = useCallback((event, newEndTime) => {
     if (!event.opportunityName) return; // Only assignments
-    dispatch({
-      type: 'UPDATE_ASSIGNMENT',
-      payload: {
-        id: event.id,
-        endTime: newEndTime,
-      },
-    });
-  }, [dispatch]);
+    const payload = { id: event.id, endTime: newEndTime };
+    if (onMoveAssignment) onMoveAssignment(payload);
+    else dispatch({ type: 'UPDATE_ASSIGNMENT', payload });
+  }, [dispatch, onMoveAssignment]);
 
   // Handle single click on empty slot (place picked job)
   function handleSlotSingleClick(date, hour, minute, memberId) {
