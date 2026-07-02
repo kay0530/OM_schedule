@@ -30,7 +30,12 @@ export function createMsalInstance(clientId, tenantId, redirectUri) {
       redirectUri: redirectUri || window.location.origin + window.location.pathname,
     },
     cache: {
-      cacheLocation: 'localStorage',
+      // sessionStorage (MSAL default), NOT localStorage: GitHub Pages project
+      // sites share one origin per account, so localStorage here is readable
+      // by every other kay0530.github.io app — an XSS in any of them could
+      // steal the Graph refresh token (write access to all members' calendars).
+      // Tab restarts are re-authenticated silently via ssoSilent (AAD cookie).
+      cacheLocation: 'sessionStorage',
       storeAuthStateInCookie: false,
     },
   };

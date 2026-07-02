@@ -75,6 +75,21 @@ export function AuthProvider({ children }) {
             await msalLogout(instance, accounts[0]);
             setError('このアプリはAltenergy社員専用です。');
           }
+        } else {
+          // sessionStorage cache doesn't survive new tabs / browser restarts —
+          // try silent SSO via the AAD session cookie before asking the user
+          // to click the login button again.
+          try {
+            const silent = await instance.ssoSilent({ scopes: DEFAULT_SCOPES });
+            if (silent?.account && isAllowedAccount(silent.account)) {
+              instance.setActiveAccount(silent.account);
+              setAccount(silent.account);
+              setIsAuthenticated(true);
+            }
+          } catch {
+            // interaction required (no AAD session / iframe blocked) —
+            // fall through to the manual MS365連携 button
+          }
         }
 
         setMsalInstance(instance);
