@@ -390,11 +390,12 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
     }
   }
 
-  // Handle resize end from EventBlock (Outlook-synced assignments get a PATCH
-  // via onMoveAssignment — see the drop handler note)
-  const handleResizeEnd = useCallback((event, newEndTime) => {
+  // Handle resize end from EventBlock — changes = {startTime?} (top edge) or
+  // {endTime?} (bottom edge). Outlook-synced assignments get a PATCH via
+  // onMoveAssignment — see the drop handler note.
+  const handleResizeEnd = useCallback((event, changes) => {
     if (!event.opportunityName) return; // Only assignments
-    const payload = { id: event.id, endTime: newEndTime };
+    const payload = { id: event.id, ...changes };
     if (onMoveAssignment) onMoveAssignment(payload);
     else dispatch({ type: 'UPDATE_ASSIGNMENT', payload });
   }, [dispatch, onMoveAssignment]);

@@ -252,9 +252,10 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
     } catch {}
   }
 
-  const handleResizeEnd = useCallback((event, newEndTime) => {
+  // changes = {startTime?} (top edge) or {endTime?} (bottom edge)
+  const handleResizeEnd = useCallback((event, changes) => {
     if (!event.opportunityName) return;
-    const payload = { id: event.id, endTime: newEndTime };
+    const payload = { id: event.id, ...changes };
     if (onMoveAssignment) onMoveAssignment(payload);
     else dispatch({ type: 'UPDATE_ASSIGNMENT', payload });
   }, [dispatch, onMoveAssignment]);

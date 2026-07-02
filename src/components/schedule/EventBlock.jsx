@@ -1,18 +1,21 @@
 import { useState, useRef, useCallback } from 'react';
-import { timeStringToMinutes } from '../../utils/dateUtils';
+import { timeStringToMinutes, minutesToTimeString } from '../../utils/dateUtils';
 import { getContrastText } from '../../utils/colorUtils';
 
 /**
  * Single event block rendered on the weekly calendar grid.
  * Positioned absolutely based on start/end time within the hour grid.
- * Supports drag-to-move and resize (bottom edge) for assignment events.
+ * Supports drag-to-move and Outlook-style resize (top AND bottom edges) for
+ * assignment events — dragging an edge stretches/shrinks the block live with
+ * 30-min snapping, then commits via onResizeEnd.
  *
- * @param {{ event: object, hourHeight: number, startHour: number, memberColor?: string, onClick?: (event) => void, onResizeEnd?: (event, newEndTime: string) => void }}
+ * @param {{ event: object, hourHeight: number, startHour: number, memberColor?: string, onClick?: (event) => void, onResizeEnd?: (event, changes: {startTime?: string, endTime?: string}) => void }}
  */
 export default function EventBlock({ event, hourHeight, startHour, memberColor, onClick, onDoubleClick, onResizeEnd, isActive, colorOutlook = true, laneIndex = 0, laneCount = 1 }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [resizeDeltaPx, setResizeDeltaPx] = useState(0);
-  const [isResizing, setIsResizing] = useState(false);
+  const [resizeEdge, setResizeEdge] = useState(null); // 'top' | 'bottom' | null
+  const isResizing = resizeEdge !== null;
   const resizeStartY = useRef(null);
   const blockRef = useRef(null);
 
@@ -58,8 +61,19 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
 
   const title = event.opportunityName || event.title || event.statusLabel || '';
 
-  // Apply resize delta to height
-  const height = Math.max(baseHeight + resizeDeltaPx, hourHeight / 2); // min 30min
+  // Apply the live resize delta to the block geometry: dragging the top edge
+  // moves the top AND shrinks/grows the height, the bottom edge only the height
+  const minHeightPx = hourHeight / 2; // 30-min minimum duration
+  const liveTop = topOffset + (resizeEdge === 'top' ? resizeDeltaPx : 0);
+  const height = Math.max(
+    baseHeight + (resizeEdge === 'top' ? -resizeDeltaPx : resizeEdge === 'bottom' ? resizeDeltaPx : 0),
+    minHeightPx
+  );
+
+  // Live time labels while resizing (Outlook shows the changing time)
+  const resizeDeltaMin = Math.round((resizeDeltaPx / hourHeight) * 60);
+  const displayStartTime = resizeEdge === 'top' ? minutesToTimeString(startMinutes + resizeDeltaMin) : startTime;
+  const displayEndTime = resizeEdge === 'bottom' ? minutesToTimeString(endMinutes + resizeDeltaMin) : endTime;
 
   // Drag-to-move handlers (HTML5 drag & drop, assignments only)
   function handleDragStart(e) {
@@ -87,49 +101,55 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
     }
   }
 
-  // Resize handlers (bottom edge, assignments only)
-  const handleResizeMouseDown = useCallback((e) => {
+  // Resize handlers (top/bottom edges, assignments only). The delta is
+  // snapped to 30-min steps and clamped LIVE so the preview never inverts,
+  // never leaves the 00:00–24:00 grid, and keeps a 30-min minimum duration.
+  const startResize = useCallback((edge) => (e) => {
     if (!isAssignment) return;
     e.stopPropagation();
-    e.preventDefault();
-    setIsResizing(true);
+    e.preventDefault(); // also blocks the parent's HTML5 drag from this press
+    setResizeEdge(edge);
+    setResizeDeltaPx(0);
     resizeStartY.current = e.clientY;
 
+    const minH = hourHeight / 2;
+    const snapSize = hourHeight / 2;
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+    // Sub-30min events exist (reconcile copies Outlook-edited times verbatim):
+    // floor the shrink allowance at 0 or the clamp bounds invert and a bare
+    // click on a handle would commit a time change (or a negative startTime).
+    const maxShrink = Math.max(baseHeight - minH, 0);
+    const computeSnapped = (clientY) => {
+      const snapped = Math.round((clientY - resizeStartY.current) / snapSize) * snapSize;
+      return edge === 'top'
+        // top edge: not above the grid start, keep >= 30min duration
+        ? clamp(snapped, -topOffset, maxShrink)
+        // bottom edge: keep >= 30min duration, not past 24:00
+        : clamp(snapped, -maxShrink, ((24 * 60 - endMinutes) / 60) * hourHeight);
+    };
+
     function onMouseMove(moveEvent) {
-      const deltaY = moveEvent.clientY - resizeStartY.current;
-      // Snap to 30-min intervals (half hourHeight)
-      const snapSize = hourHeight / 2;
-      const snappedDelta = Math.round(deltaY / snapSize) * snapSize;
-      setResizeDeltaPx(snappedDelta);
+      setResizeDeltaPx(computeSnapped(moveEvent.clientY));
     }
 
     function onMouseUp(upEvent) {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-
-      const deltaY = upEvent.clientY - resizeStartY.current;
-      const snapSize = hourHeight / 2;
-      const snappedDelta = Math.round(deltaY / snapSize) * snapSize;
-
-      // Calculate new end time
-      const deltaMinutes = (snappedDelta / hourHeight) * 60;
-      const newEndMinutes = Math.max(endMinutes + deltaMinutes, startMinutes + 30); // min 30min
-      const clampedEnd = Math.min(newEndMinutes, 19 * 60); // max 19:00
-      const newEndHour = Math.floor(clampedEnd / 60);
-      const newEndMin = clampedEnd % 60;
-      const newEndTime = `${String(newEndHour).padStart(2, '0')}:${String(newEndMin).padStart(2, '0')}`;
-
+      const deltaMinutes = Math.round((computeSnapped(upEvent.clientY) / hourHeight) * 60);
       setResizeDeltaPx(0);
-      setIsResizing(false);
-
-      if (newEndTime !== endTime && onResizeEnd) {
-        onResizeEnd(event, newEndTime);
+      setResizeEdge(null);
+      if (deltaMinutes !== 0 && onResizeEnd) {
+        if (edge === 'top') {
+          onResizeEnd(event, { startTime: minutesToTimeString(startMinutes + deltaMinutes) });
+        } else {
+          onResizeEnd(event, { endTime: minutesToTimeString(endMinutes + deltaMinutes) });
+        }
       }
     }
 
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [isAssignment, hourHeight, endMinutes, startMinutes, endTime, event, onResizeEnd]);
+  }, [isAssignment, hourHeight, topOffset, baseHeight, endMinutes, startMinutes, event, onResizeEnd]);
 
   // NOTE: never add filter-based hover effects (hover:brightness etc.) to
   // this element — a CSS filter on the dragged element makes Chromium abort
@@ -143,7 +163,7 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
       } ${isDraggable ? 'select-none' : ''} ${isActive ? 'ring-2 ring-accent ring-offset-1 ring-offset-surface' : ''}`}
       title={`${title}${startTime && endTime ? ` (${startTime}–${endTime})` : ''}${event.location ? `\n📍 ${event.location}` : ''}${isAssignment ? (isSyncedToOutlook ? '\n✓ Outlook送信済み' : '\n仮（未送信）') : ''}`}
       style={{
-        top: `${topOffset}px`,
+        top: `${liveTop}px`,
         height: `${Math.max(height, 14)}px`,
         // Lane-based horizontal layout when events overlap
         left: laneCount > 1 ? `calc(${(laneIndex / laneCount) * 100}% + 1px)` : '2px',
@@ -189,20 +209,39 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
           {title}
         </p>
       )}
-      {/* Time range */}
+      {/* Time range (live preview while resizing) */}
       {height >= 30 && (
-        <p className="text-[9px] opacity-75 truncate leading-tight px-1">
-          {startTime}–{endTime}
+        <p className={`text-[9px] truncate leading-tight px-1 ${isResizing ? 'font-bold opacity-100' : 'opacity-75'}`}>
+          {displayStartTime}–{displayEndTime}
         </p>
       )}
 
-      {/* Resize handle at bottom edge (assignments only) */}
+      {/* Resize handles at top/bottom edges (assignments only) — Outlook
+          style: subtle strips, emphasized while the event is active/selected */}
+      {isDraggable && height >= 28 && (
+        <div
+          className={`absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize hover:bg-black/15 transition-colors ${
+            isActive || resizeEdge === 'top' ? 'bg-black/10' : ''
+          }`}
+          onMouseDown={startResize('top')}
+          onClick={(e) => e.stopPropagation()}
+          draggable={false}
+          title="ドラッグで開始時間を変更"
+        >
+          {(isActive || isResizing) && (
+            <div className="mx-auto mt-0.5 w-4 h-0.5 rounded-full bg-current opacity-60" />
+          )}
+        </div>
+      )}
       {isDraggable && height >= 20 && (
         <div
-          className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize hover:bg-black/10 transition-colors"
-          onMouseDown={handleResizeMouseDown}
+          className={`absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize hover:bg-black/15 transition-colors ${
+            isActive || resizeEdge === 'bottom' ? 'bg-black/10' : ''
+          }`}
+          onMouseDown={startResize('bottom')}
           onClick={(e) => e.stopPropagation()}
-          title="ドラッグでリサイズ"
+          draggable={false}
+          title="ドラッグで終了時間を変更"
         >
           <div className="mx-auto mt-0.5 w-4 h-0.5 rounded-full bg-current opacity-50" />
         </div>
