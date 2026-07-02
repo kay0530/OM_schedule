@@ -5,14 +5,17 @@ import { useAuth } from '../../context/AuthContext';
 import { useCalendar } from '../../context/CalendarContext';
 import { createEventForMember, updateEventForMember, deleteEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
-import { addDays } from '../../utils/dateUtils';
+import { addDays, toGraphDateTime } from '../../utils/dateUtils';
 
-// Generate 30-minute interval options from 08:00 to 18:00
+// Generate 30-minute interval options across the full day (00:00–24:00),
+// matching AssignModal/QuickAddModal — events created outside 08:00-18:00
+// (early departures, night work) must stay editable here.
 const TIME_OPTIONS = [];
-for (let h = 8; h <= 18; h++) {
+for (let h = 0; h < 24; h++) {
   TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:00`);
-  if (h < 18) TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:30`);
+  TIME_OPTIONS.push(`${String(h).padStart(2, '0')}:30`);
 }
+TIME_OPTIONS.push('24:00');
 
 /**
  * Modal that displays event details and allows editing/deleting.
@@ -122,11 +125,45 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
       setEditMemberIds([...new Set(groupMemberIds)]);
       setEditLocation(event.address || event.location || '');
       setEditMemo(event.scheduleMemo || '');
-      setSyncToOutlook(false);
+      // Default ON for events already linked to Outlook: a local-only edit of
+      // a synced assignment would be silently reverted by the next reconcile
+      // sweep, and editing a pure Outlook event without sync is a no-op.
+      // (Inline isOutlookEvent logic — value change only; deps must stay
+      // [event?.id, isOpen] per the CLAUDE.md constraint.)
+      setSyncToOutlook(
+        !!event.outlookEventId
+        || (!event.opportunityName && !event.statusType && !!event.memberEmail)
+      );
       setDragOffset({ x: 0, y: 0 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id, isOpen]);
+
+  // Keyboard: Escape steps back (delete confirm → edit mode → close),
+  // Ctrl+Enter saves while editing. Handlers go through a ref so the listener
+  // always sees the CURRENT state/closures (a deps-based effect would capture
+  // a stale handleSave — typing doesn't re-run the effect). Separate effect —
+  // the init effect above has constrained deps and must not change.
+  const keyCtxRef = useRef(null);
+  keyCtxRef.current = { saving, deleteConfirm, editMode, onClose, handleCancelEdit, handleSave };
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKey(e) {
+      const ctx = keyCtxRef.current;
+      if (!ctx) return;
+      if (e.key === 'Escape') {
+        if (ctx.saving) return; // don't interrupt an in-flight Graph write
+        if (ctx.deleteConfirm) { setDeleteConfirm(false); return; }
+        if (ctx.editMode) { ctx.handleCancelEdit(); return; }
+        ctx.onClose();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && ctx.editMode && !ctx.saving) {
+        e.preventDefault();
+        ctx.handleSave();
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen]);
 
   if (!isOpen || !event) return null;
 
@@ -269,14 +306,26 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           }
         : {
             subject: finalTitle,
+            // Explicit false: PATCHing an all-day event to timed requires
+            // clearing the flag, or Graph rejects the non-midnight times (400)
+            isAllDay: false,
             start: { dateTime: `${editDate}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
-            end: { dateTime: `${editDate}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
+            // toGraphDateTime: local '24:00' end → next-day midnight (Graph rejects T24:00:00)
+            end: { dateTime: toGraphDateTime(editDate, effEnd), timeZone: 'Asia/Tokyo' },
             location: { displayName: editLocation || '' },
             body: { contentType: 'Text', content: buildEventBody(editMemo || '') },
           };
 
       const outlookErrors = [];
       const token = (syncToOutlook && isAuthenticated) ? await getToken() : null;
+
+      // A pure Outlook event has no local store — saving without a token would
+      // silently discard every edit (modal closes, nothing persisted anywhere)
+      if (!isManualAssignment && isOutlook && !token) {
+        setError('この予定はOutlook上の予定のため、保存には「Outlookに反映」のチェックとMS365ログインが必要です');
+        setSaving(false);
+        return;
+      }
 
       if (isManualAssignment) {
         // Diff: which members stay, get added, get removed
@@ -363,6 +412,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
             if (m && !m.skipOutlookSync) {
               const result = await deleteEventForMember(token, m, a.outlookEventId);
               if (!result.success) outlookErrors.push(`${m.nameJa}: ${result.error}`);
+              // Prune the cached copy so the removed member's event doesn't
+              // linger as a ghost Outlook chip (functional: loop-safe)
+              else setEvents((prev) => prev.filter((e) => e.id !== a.outlookEventId));
             }
           }
           dispatch({ type: 'DELETE_ASSIGNMENT', payload: a.id });
@@ -374,10 +426,16 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
         if (!result.success) {
           outlookErrors.push(`${event.memberEmail}: ${result.error}`);
         } else {
-          setEvents(
-            events.map((e) =>
+          // Cache write must mirror the Graph conventions or the chip vanishes
+          // until the next sync (all-day consumers use a half-open interval,
+          // so end must be next-day midnight). Functional update to avoid a
+          // stale `events` closure.
+          const cacheStart = editIsAllDay ? `${editDate}T00:00:00` : `${editDate}T${effStart}:00`;
+          const cacheEnd = editIsAllDay ? `${addDays(editDate)}T00:00:00` : toGraphDateTime(editDate, effEnd);
+          setEvents((prev) =>
+            prev.map((e) =>
               e.id === event.id
-                ? { ...e, title: finalTitle, start: `${editDate}T${effStart}:00`, end: `${editDate}T${effEnd}:00`, location: editLocation, isAllDay: editIsAllDay }
+                ? { ...e, title: finalTitle, start: cacheStart, end: cacheEnd, location: editLocation, isAllDay: editIsAllDay }
                 : e
             )
           );
@@ -432,7 +490,9 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                   outlookErrors.push(`${m?.nameJa || memberEmail}: ${result.error}`);
                 }
               } else {
-                setEvents(events.filter((e) => e.id !== a.outlookEventId));
+                // Functional update — the loop iterates multiple members and a
+                // render-time `events` closure would resurrect prior deletions
+                setEvents((prev) => prev.filter((e) => e.id !== a.outlookEventId));
               }
             }
           }
@@ -447,7 +507,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
           if (!result.success && !/404/.test(result.error || '')) {
             outlookErrors.push(`${event.memberEmail}: ${result.error}`);
           } else {
-            setEvents(events.filter((e) => e.id !== event.id));
+            setEvents((prev) => prev.filter((e) => e.id !== event.id));
           }
         }
       }
@@ -473,10 +533,12 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
   return (
     <>
-      {/* Backdrop (lighter & not blocking — modal is draggable so user may want to see the calendar) */}
+      {/* Backdrop (lighter & not blocking — modal is draggable so user may want
+          to see the calendar). While editing, a stray click must NOT discard
+          the user's input — close only from read-only mode. */}
       <div
         className="fixed inset-0 bg-black/20 dark:bg-black/40 z-40"
-        onClick={onClose}
+        onClick={() => { if (!editMode) onClose(); }}
       />
 
       {/* Modal */}
@@ -530,7 +592,7 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
 
             {/* Error message */}
             {error && (
-              <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 dark:bg-red-500/15 dark:text-red-300">
+              <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 dark:bg-red-500/15 dark:text-red-300 whitespace-pre-line">
                 {error}
               </div>
             )}
@@ -603,7 +665,16 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                   <input
                     type="checkbox"
                     checked={editIsAllDay}
-                    onChange={(e) => setEditIsAllDay(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setEditIsAllDay(checked);
+                      // Leaving all-day: the 00:00/24:00 sentinel pair is not a
+                      // pickable timed range — snap to sensible defaults
+                      if (!checked && editStartTime === '00:00' && editEndTime === '24:00') {
+                        setEditStartTime('08:00');
+                        setEditEndTime('17:00');
+                      }
+                    }}
                     className="w-4 h-4 text-accent rounded border-edge focus:ring-accent"
                   />
                   <span className="text-sm text-ink">終日</span>
@@ -619,6 +690,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         onChange={(e) => setEditStartTime(e.target.value)}
                         className="w-full px-3 py-2 text-sm border border-edge rounded-lg focus:ring-2 focus:ring-accent focus:border-accent outline-none"
                       >
+                        {/* Off-grid time (e.g. 09:15 from Outlook) — keep it selectable */}
+                        {!TIME_OPTIONS.includes(editStartTime) && (
+                          <option value={editStartTime}>{editStartTime}</option>
+                        )}
                         {TIME_OPTIONS.map((t) => (
                           <option key={t} value={t}>{t}</option>
                         ))}
@@ -631,6 +706,10 @@ export default function EventDetailModal({ isOpen, onClose, event }) {
                         onChange={(e) => setEditEndTime(e.target.value)}
                         className="w-full px-3 py-2 text-sm border border-edge rounded-lg focus:ring-2 focus:ring-accent focus:border-accent outline-none"
                       >
+                        {/* Off-grid time (e.g. 09:15 from Outlook) — keep it selectable */}
+                        {!TIME_OPTIONS.includes(editEndTime) && (
+                          <option value={editEndTime}>{editEndTime}</option>
+                        )}
                         {TIME_OPTIONS.map((t) => (
                           <option key={t} value={t}>{t}</option>
                         ))}

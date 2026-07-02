@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { createEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
-import { addDays } from '../../utils/dateUtils';
+import { addDays, toGraphDateTime } from '../../utils/dateUtils';
 
 /**
  * Quick-add modal for creating a manual schedule entry via double-click.
@@ -57,6 +57,16 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, presetDate, presetTime, presetMemberId, presetAllDay, presetIsDelivery]);
 
+  // Close on Escape (guarded while a save is in flight)
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKey(e) {
+      if (e.key === 'Escape' && !saving) onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen, saving, onClose]);
+
   if (!isOpen) return null;
 
   function toggleMember(id) {
@@ -70,6 +80,11 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
     if (!title.trim()) { alert('件名を入力してください。'); return; }
     if (!date) { alert('日付を入力してください。'); return; }
     if (selectedMembers.length === 0) { alert('担当者を1名以上選択してください。'); return; }
+    // Delivery entries ignore the time selects (forced to 08:00-17:00 below)
+    if (!isAllDay && !isDelivery && startTime >= endTime) {
+      alert('終了時間は開始時間より後にしてください。');
+      return;
+    }
 
     setSaving(true);
 
@@ -105,7 +120,8 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
             } : {
               subject: finalTitle,
               start: { dateTime: `${date}T${effStart}:00`, timeZone: 'Asia/Tokyo' },
-              end: { dateTime: `${date}T${effEnd}:00`, timeZone: 'Asia/Tokyo' },
+              // toGraphDateTime: local '24:00' end → next-day midnight (Graph rejects T24:00:00)
+              end: { dateTime: toGraphDateTime(date, effEnd), timeZone: 'Asia/Tokyo' },
               location: { displayName: location },
               body: { contentType: 'Text', content: bodyContent },
             };
@@ -149,7 +165,9 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 dark:bg-black/60 z-50" onClick={onClose} />
+      {/* Backdrop — intentionally NOT click-to-close (a stray click would
+          discard the form). Close via ×, キャンセル or Escape. */}
+      <div className="fixed inset-0 bg-black/40 dark:bg-black/60 z-50" />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div
           className="bg-raised text-ink rounded-xl shadow-2xl w-full max-w-md pointer-events-auto"
@@ -255,6 +273,15 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
               onChange={(e) => setLocation(e.target.value)}
               placeholder="場所（任意）"
               className="w-full px-3 py-2 border border-edge rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+            />
+
+            {/* Memo (state was already wired to the save path — the field was missing) */}
+            <textarea
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              rows={3}
+              placeholder="メモ（任意）"
+              className="w-full px-3 py-2 border border-edge rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-y"
             />
 
             {/* Outlook sync */}

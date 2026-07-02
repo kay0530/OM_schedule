@@ -32,6 +32,20 @@ export function addDays(dateStr, days = 1) {
   return toISODate(dt);
 }
 
+/**
+ * Build a Graph-compatible dateTime string from a local date + HH:MM time.
+ * The local convention allows endTime '24:00' (end of day), which is not a
+ * valid Edm.DateTimeOffset hour — Graph rejects "T24:00:00" with a 400.
+ * Map it to next-day midnight instead.
+ * @param {string} dateStr - ISO date "YYYY-MM-DD"
+ * @param {string} time - "HH:MM" (may be "24:00")
+ * @returns {string} "YYYY-MM-DDTHH:MM:00"
+ */
+export function toGraphDateTime(dateStr, time) {
+  if (time === '24:00') return `${addDays(dateStr)}T00:00:00`;
+  return `${dateStr}T${time}:00`;
+}
+
 export function getWeekDates(baseDate) {
   const d = new Date(baseDate);
   const day = d.getDay();

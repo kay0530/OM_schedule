@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { createEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
-import { addDays } from '../../utils/dateUtils';
+import { addDays, toGraphDateTime } from '../../utils/dateUtils';
 
 /**
  * Modal dialog for assigning a job (opportunity or maintenance) to member(s).
@@ -68,6 +68,16 @@ export default function AssignModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, opportunity, preselectedMember, preselectedDate, preselectedStartTime, preselectedEndTime]);
 
+  // Close on Escape (guarded while a save is in flight)
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKey(e) {
+      if (e.key === 'Escape' && !saving) onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen, saving, onClose]);
+
   if (!isOpen || !opportunity) return null;
 
   function toggleMember(memberId) {
@@ -87,6 +97,10 @@ export default function AssignModal({
     }
     if (!date) {
       alert('日付を入力してください。');
+      return;
+    }
+    if (!isAllDay && startTime >= endTime) {
+      alert('終了時間は開始時間より後にしてください。');
       return;
     }
 
@@ -133,7 +147,8 @@ export default function AssignModal({
               } : {
                 subject: displayName,
                 start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
-                end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
+                // toGraphDateTime: local '24:00' end → next-day midnight (Graph rejects T24:00:00)
+                end: { dateTime: toGraphDateTime(date, endTime), timeZone: 'Asia/Tokyo' },
                 location: { displayName: opportunity.address || '' },
                 body: { contentType: 'Text', content: bodyContent },
               };
@@ -196,11 +211,10 @@ export default function AssignModal({
 
   return (
     <>
-      {/* Backdrop overlay */}
-      <div
-        className="fixed inset-0 bg-black/40 dark:bg-black/60 z-50"
-        onClick={onClose}
-      />
+      {/* Backdrop overlay — intentionally NOT click-to-close: a stray click
+          would discard the whole form (members/category/memo). Close via ×,
+          キャンセル or Escape. */}
+      <div className="fixed inset-0 bg-black/40 dark:bg-black/60 z-50" />
 
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
