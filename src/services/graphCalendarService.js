@@ -20,6 +20,43 @@ const MEMBER_EMAIL_MAP = {
 };
 
 /**
+ * Convert a failed Graph response into a short, user-readable Japanese error.
+ * The thrown message surfaces in modal error boxes / alerts, so it must not be
+ * a raw JSON blob. The full body is logged to the console for debugging.
+ * @param {number} status - HTTP status code
+ * @param {string} errorBody - Raw response body text
+ * @returns {Error}
+ */
+function humanizeGraphError(status, errorBody) {
+  let code = '';
+  let detail = errorBody;
+  try {
+    const parsed = JSON.parse(errorBody);
+    code = parsed.error?.code || '';
+    detail = parsed.error?.message || errorBody;
+  } catch { /* body was not JSON — keep raw text */ }
+  console.error(`[Graph] HTTP ${status} ${code}: ${detail}`);
+
+  let message;
+  if (status === 401 || code === 'InvalidAuthenticationToken') {
+    message = 'MS365の認証が切れています。再ログインしてください';
+  } else if (status === 403 || code === 'ErrorAccessDenied') {
+    message = 'このカレンダーを操作する権限がありません';
+  } else if (status === 404) {
+    message = '対象の予定またはカレンダーが見つかりません';
+  } else if (status === 429) {
+    message = 'Outlookへのアクセスが混み合っています。しばらく待ってから再試行してください';
+  } else if (status >= 500) {
+    message = 'Microsoft側で一時的なエラーが発生しました。しばらく待ってから再試行してください';
+  } else if (status === 400 || code === 'ErrorInvalidRequest') {
+    message = '予定の内容をOutlookが受け付けませんでした（日時の指定などを確認してください）';
+  } else {
+    message = 'Outlookとの通信でエラーが発生しました';
+  }
+  return new Error(`${message} (HTTP ${status})`);
+}
+
+/**
  * Make an authenticated GET request to Microsoft Graph API.
  * @param {string} url
  * @param {string} accessToken
@@ -33,8 +70,7 @@ async function graphGet(url, accessToken) {
     },
   });
   if (!res.ok) {
-    const errorBody = await res.text();
-    throw new Error(`Graph API error ${res.status}: ${errorBody}`);
+    throw humanizeGraphError(res.status, await res.text());
   }
   return res.json();
 }
@@ -56,8 +92,7 @@ async function graphPost(url, accessToken, body) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const errorBody = await res.text();
-    throw new Error(`Graph API error ${res.status}: ${errorBody}`);
+    throw humanizeGraphError(res.status, await res.text());
   }
   return res.json();
 }
@@ -141,8 +176,7 @@ async function graphGetTextBody(url, accessToken) {
     },
   });
   if (!res.ok) {
-    const errorBody = await res.text();
-    throw new Error(`Graph API error ${res.status}: ${errorBody}`);
+    throw humanizeGraphError(res.status, await res.text());
   }
   return res.json();
 }
@@ -251,8 +285,7 @@ async function graphPatch(url, accessToken, body) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const errorBody = await res.text();
-    throw new Error(`Graph API error ${res.status}: ${errorBody}`);
+    throw humanizeGraphError(res.status, await res.text());
   }
   return res.json();
 }
@@ -275,8 +308,7 @@ async function graphDelete(url, accessToken) {
   // removed from Outlook directly or by another peer.
   if (res.status === 404) return { alreadyGone: true };
   if (!res.ok) {
-    const errorBody = await res.text();
-    throw new Error(`Graph API error ${res.status}: ${errorBody}`);
+    throw humanizeGraphError(res.status, await res.text());
   }
   return { alreadyGone: false };
 }
