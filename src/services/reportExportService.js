@@ -59,8 +59,10 @@ export async function collectWorkReports(getToken, startDate, endDate) {
   const token = await getToken();
   if (!token) throw new Error('MS365トークンを取得できません。再ログインしてください。');
 
-  // 瀬戸 is on Google (skipOutlookSync) — not covered by this Outlook-only export.
-  const targets = MEMBERS.filter((m) => !m.skipOutlookSync);
+  // 瀬戸's schedule lives on a personal shared calendar (sharedCalendarOwner),
+  // not a tenant mailbox — /users/{email} fetch can't resolve it, so he is
+  // out of scope for this export (documented: 瀬戸さんは対象外).
+  const targets = MEMBERS.filter((m) => !m.sharedCalendarOwner);
   const errors = [];
   const byKey = new Map();
   let scanned = 0;
