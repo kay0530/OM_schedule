@@ -3,6 +3,7 @@ import JobCard, { STAGE_COLORS, MAINT_STATUS_COLORS } from './JobCard';
 import { isFirestoreEnabled, saveFilterPresets, loadFilterPresets, subscribeFilterPresets } from '../../services/firestoreService';
 import { getGithubToken, triggerSfSync } from '../../services/githubSyncService';
 import { useSfData } from '../../context/SfDataContext';
+import { useToastContext } from '../shared/Toast';
 
 /**
  * Sidebar panel listing Salesforce records.
@@ -93,21 +94,22 @@ export default function JobPanel({ onSelectOpportunity, isOpen = true, onToggle,
   // Manual SF sync (GitHub Actions workflow_dispatch)
   const [sfSyncing, setSfSyncing] = useState(false);
   const [sfSyncStatus, setSfSyncStatus] = useState('');
+  const { addToast } = useToastContext();
 
   async function handleSfSync() {
     if (sfSyncing) return;
     const token = getGithubToken();
     if (!token) {
-      alert('手動同期にはGitHubトークンが必要です。\n設定画面の「Salesforce同期」セクションでトークンを登録してください。\n（登録しなくても30分ごとに自動同期されます）');
+      addToast('手動同期にはGitHubトークンが必要です。\n設定画面の「Salesforce同期」セクションでトークンを登録してください。\n（登録しなくても30分ごとに自動同期されます）', 'warning', 8000);
       return;
     }
     setSfSyncing(true);
     try {
       await triggerSfSync(token, setSfSyncStatus);
       // Fresh data arrives via the Firestore subscription — no reload needed
-      alert('Salesforce同期が完了しました。最新データが反映されています。');
+      addToast('Salesforce同期が完了しました。最新データが反映されています。', 'success');
     } catch (err) {
-      alert(`Salesforce同期エラー: ${err.message}`);
+      addToast(`Salesforce同期エラー: ${err.message}`, 'error', 0);
     } finally {
       setSfSyncing(false);
       setSfSyncStatus('');

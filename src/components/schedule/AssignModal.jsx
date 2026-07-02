@@ -6,6 +6,7 @@ import { createEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
 import { addDays, toGraphDateTime } from '../../utils/dateUtils';
+import { useToastContext } from '../shared/Toast';
 
 /**
  * Modal dialog for assigning a job (opportunity or maintenance) to member(s).
@@ -32,6 +33,7 @@ export default function AssignModal({
 }) {
   const { dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
+  const { addToast } = useToastContext();
   const { dragOffset, handleDragHandleMouseDown, resetDrag } = useModalDrag();
 
   const [selectedMembers, setSelectedMembers] = useState([]);
@@ -92,15 +94,15 @@ export default function AssignModal({
     e.preventDefault();
 
     if (selectedMembers.length === 0) {
-      alert('担当者を1名以上選択してください。');
+      addToast('担当者を1名以上選択してください。', 'warning');
       return;
     }
     if (!date) {
-      alert('日付を入力してください。');
+      addToast('日付を入力してください。', 'warning');
       return;
     }
     if (!isAllDay && startTime >= endTime) {
-      alert('終了時間は開始時間より後にしてください。');
+      addToast('終了時間は開始時間より後にしてください。', 'warning');
       return;
     }
 
@@ -195,15 +197,16 @@ export default function AssignModal({
       const successes = outlookResults.filter((r) => r.success).length;
       const failures = outlookResults.filter((r) => !r.success);
       if (failures.length === 0) {
-        alert(`割り当て完了。Outlook予定を${successes}件作成しました。`);
+        addToast(`割り当て完了。Outlook予定を${successes}件作成しました。`, 'success');
       } else {
         const failNames = failures.map((f) => `${f.member}: ${f.error}`).join('\n');
-        alert(`割り当て完了。Outlook: ${successes}件成功、${failures.length}件失敗\n${failNames}`);
+        // Sticky: the user must act on per-member failures (再送 or Outlook側確認)
+        addToast(`割り当て完了。Outlook: ${successes}件成功、${failures.length}件失敗\n${failNames}`, 'error', 0);
       }
     } else if (syncOutlook) {
-      alert('割り当て完了。（Outlook登録対象のメンバーがいませんでした）');
+      addToast('割り当て完了。（Outlook登録対象のメンバーがいませんでした）', 'info');
     } else {
-      alert('割り当て完了。');
+      addToast('割り当て完了。', 'success');
     }
 
     onClose();

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { loadAzureConfig, saveAzureConfig, DEFAULT_AZURE_CONFIG } from '../../services/msalService';
 import { getGithubToken, saveGithubToken } from '../../services/githubSyncService';
 import { useSfData } from '../../context/SfDataContext';
+import { useToastContext } from '../shared/Toast';
 
 /**
  * Generate time options at 30-minute intervals.
@@ -28,6 +29,7 @@ const END_TIME_OPTIONS = generateTimeOptions(16, 20);
 export default function SettingsView() {
   const { assignments, settings, dispatch } = useApp();
   const { isAuthenticated, account, login, logout, loading: authLoading } = useAuth();
+  const { addToast } = useToastContext();
 
   // --- Azure AD state ---
   const [clientId, setClientId] = useState('');
@@ -138,16 +140,16 @@ export default function SettingsView() {
       try {
         const imported = JSON.parse(event.target.result);
         if (!Array.isArray(imported)) {
-          alert('無効なデータ形式です。配列を含むJSONファイルを選択してください。');
+          addToast('無効なデータ形式です。配列を含むJSONファイルを選択してください。', 'warning');
           return;
         }
         // Add each imported assignment
         for (const item of imported) {
           dispatch({ type: 'ADD_ASSIGNMENT', payload: item });
         }
-        alert(`${imported.length}件のデータをインポートしました。`);
+        addToast(`${imported.length}件のデータをインポートしました。`, 'success');
       } catch {
-        alert('JSONの解析に失敗しました。ファイルを確認してください。');
+        addToast('JSONの解析に失敗しました。ファイルを確認してください。', 'warning');
       }
     };
     reader.readAsText(file);

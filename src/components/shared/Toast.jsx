@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, createContext, useContext, useMemo } from 'react';
 
 const TYPE_STYLES = {
   success: {
@@ -38,7 +38,7 @@ const TYPE_STYLES = {
 
 /**
  * Toast notification hook.
- * @returns {{ toasts: Array, addToast: (message: string, type?: string) => void, removeToast: (id: string) => void }}
+ * @returns {{ toasts: Array, addToast: (message: string, type?: string, durationMs?: number) => string, removeToast: (id: string) => void }}
  */
 export function useToast() {
   const [toasts, setToasts] = useState([]);
@@ -48,15 +48,18 @@ export function useToast() {
   }, []);
 
   const addToast = useCallback(
-    (message, type = 'info') => {
+    // durationMs 0 = sticky (manual dismiss) — use for errors the user must
+    // act on (e.g. per-member Outlook failures)
+    (message, type = 'info', durationMs = 3000) => {
       const id = `toast_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const toast = { id, message, type };
       setToasts((prev) => [...prev, toast]);
 
-      // Auto-dismiss after 3 seconds
-      setTimeout(() => {
-        removeToast(id);
-      }, 3000);
+      if (durationMs > 0) {
+        setTimeout(() => {
+          removeToast(id);
+        }, durationMs);
+      }
 
       return id;
     },
@@ -64,6 +67,32 @@ export function useToast() {
   );
 
   return { toasts, addToast, removeToast };
+}
+
+const ToastContext = createContext(null);
+
+/**
+ * App-level provider so any component can push toasts without prop drilling.
+ * Renders the container itself (z-[100] — above the z-50 modal layer).
+ */
+export function ToastProvider({ children }) {
+  const { toasts, addToast, removeToast } = useToast();
+  // Context value deliberately EXCLUDES `toasts`: only ToastContainer (props)
+  // needs the list. A value that changed with each show/dismiss would
+  // re-render every consumer (incl. AppInner → the whole grid) twice per toast.
+  const api = useMemo(() => ({ addToast, removeToast }), [addToast, removeToast]);
+  return (
+    <ToastContext.Provider value={api}>
+      {children}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+    </ToastContext.Provider>
+  );
+}
+
+export function useToastContext() {
+  const ctx = useContext(ToastContext);
+  if (!ctx) throw new Error('useToastContext must be used within a ToastProvider');
+  return ctx;
 }
 
 /**
@@ -77,7 +106,7 @@ function ToastItem({ toast, onRemove }) {
       className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg ${style.container} animate-slide-in`}
     >
       <div className="shrink-0">{style.icon}</div>
-      <p className="text-sm font-medium flex-1">{toast.message}</p>
+      <p className="text-sm font-medium flex-1 whitespace-pre-line break-words">{toast.message}</p>
       <button
         onClick={() => onRemove(toast.id)}
         className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"

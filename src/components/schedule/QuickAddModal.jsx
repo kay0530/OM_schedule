@@ -6,6 +6,7 @@ import { createEventForMember } from '../../services/graphCalendarService';
 import { buildEventBody } from '../../services/eventBodyTemplate';
 import { useModalDrag } from '../../hooks/useModalDrag';
 import { addDays, toGraphDateTime } from '../../utils/dateUtils';
+import { useToastContext } from '../shared/Toast';
 
 /**
  * Quick-add modal for creating a manual schedule entry via double-click.
@@ -23,6 +24,7 @@ for (let h = 0; h <= 24; h++) {
 export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime, presetMemberId, presetAllDay, presetIsDelivery }) {
   const { dispatch } = useApp();
   const { isAuthenticated, getToken } = useAuth();
+  const { addToast } = useToastContext();
   const { dragOffset, handleDragHandleMouseDown, resetDrag } = useModalDrag();
 
   const [title, setTitle] = useState('');
@@ -77,12 +79,12 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!title.trim()) { alert('件名を入力してください。'); return; }
-    if (!date) { alert('日付を入力してください。'); return; }
-    if (selectedMembers.length === 0) { alert('担当者を1名以上選択してください。'); return; }
+    if (!title.trim()) { addToast('件名を入力してください。', 'warning'); return; }
+    if (!date) { addToast('日付を入力してください。', 'warning'); return; }
+    if (selectedMembers.length === 0) { addToast('担当者を1名以上選択してください。', 'warning'); return; }
     // Delivery entries ignore the time selects (forced to 08:00-17:00 below)
     if (!isAllDay && !isDelivery && startTime >= endTime) {
-      alert('終了時間は開始時間より後にしてください。');
+      addToast('終了時間は開始時間より後にしてください。', 'warning');
       return;
     }
 
@@ -158,7 +160,10 @@ export default function QuickAddModal({ isOpen, onClose, presetDate, presetTime,
 
     setSaving(false);
     if (outlookErrors.length > 0) {
-      alert(`予定を追加しました。\nOutlook同期エラー:\n${outlookErrors.join('\n')}`);
+      // Sticky: per-member Outlook failures need user follow-up
+      addToast(`予定を追加しました。\nOutlook同期エラー:\n${outlookErrors.join('\n')}`, 'error', 0);
+    } else {
+      addToast('予定を追加しました。', 'success');
     }
     onClose();
   }

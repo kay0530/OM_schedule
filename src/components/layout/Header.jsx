@@ -6,6 +6,7 @@ import { useCalendarSync } from '../../hooks/useCalendarSync';
 import { MEMBERS } from '../../data/members';
 import { getWeekDates, formatDateShort } from '../../utils/dateUtils';
 import ReportExportModal from '../schedule/ReportExportModal';
+import { useToastContext } from '../shared/Toast';
 
 /**
  * Format a date as Japanese year-month string (e.g., "2026年4月")
@@ -22,6 +23,7 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
   const { events, lastSynced, loading: calLoading } = useCalendar();
   const { settings, dispatch, shareStatus } = useApp();
   const { syncing, syncFromOutlook } = useCalendarSync();
+  const { addToast } = useToastContext();
   const [reportOpen, setReportOpen] = useState(false);
 
   const theme = settings.theme || 'light';
@@ -44,7 +46,7 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
     try {
       const token = await getToken();
       if (!token) {
-        alert('トークン取得に失敗しました。再ログインしてください。');
+        addToast('トークン取得に失敗しました。再ログインしてください。', 'error', 0);
         return;
       }
       const startDate = new Date(currentDate);
@@ -57,7 +59,7 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
       const syncableMembers = MEMBERS.filter((m) => !m.skipOutlookSync);
       const result = await syncFromOutlook(token, syncableMembers, startDate, endDate);
       if (result.success) {
-        alert(`Outlook同期完了: ${result.count}件のイベントを取得しました`);
+        addToast(`Outlook同期完了: ${result.count}件のイベントを取得しました`, 'success');
       } else if (result.errors?.length) {
         // Name WHO failed — shared-calendar errors already embed the member
         // name + remedy, so only prefix raw errors with the member's name
@@ -70,12 +72,12 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
             return m && !msg.includes(m.nameJa) ? `${m.nameJa}: ${msg}` : msg;
           })
           .join('\n');
-        alert(`Outlook同期: ${result.count}件取得（一部エラー）\n${detail}\n\n失敗したメンバーの予定は前回同期時の内容を表示しています。`);
+        addToast(`Outlook同期: ${result.count}件取得（一部エラー）\n${detail}\n\n失敗したメンバーの予定は前回同期時の内容を表示しています。`, 'error', 0);
       } else {
-        alert(`Outlook同期: ${result.count}件取得（一部エラー: ${result.error}）`);
+        addToast(`Outlook同期: ${result.count}件取得（一部エラー: ${result.error}）`, 'error', 0);
       }
     } catch (err) {
-      alert(`同期エラー: ${err.message}`);
+      addToast(`同期エラー: ${err.message}`, 'error', 0);
     }
   }
 
