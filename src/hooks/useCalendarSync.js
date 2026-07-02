@@ -120,9 +120,30 @@ export function useCalendarSync() {
           endStr
         );
 
-        // Merge: keep events outside the synced range, replace events within it
-        if (result.data.length > 0) {
+        // Merge: keep events outside the synced range, replace events within it.
+        // A fully successful fetch may legitimately be EMPTY (all events were
+        // deleted on the Outlook side) — merge anyway so stale cached events
+        // get cleared. On partial failure, keep the failed members' previously
+        // cached events instead of blanking their columns.
+        if (result.errors.length === 0) {
           mergeEvents(result.data, startStr, endStr);
+        } else if (result.data.length > 0) {
+          const failedEmails = new Set();
+          for (const entry of result.errors) {
+            // Match by member object so both email identities are covered
+            // (events tag memberEmail as m.email for shared calendars but
+            // m.outlookEmail || m.email for normal fetches)
+            const m = (members || []).find(
+              (mm) => ((mm.outlookEmail || mm.email) || '').toLowerCase() === String(entry.member || '').toLowerCase()
+            );
+            if (m) {
+              if (m.email) failedEmails.add(m.email.toLowerCase());
+              if (m.outlookEmail) failedEmails.add(m.outlookEmail.toLowerCase());
+            } else if (entry.member) {
+              failedEmails.add(String(entry.member).toLowerCase());
+            }
+          }
+          mergeEvents(result.data, startStr, endStr, failedEmails);
         }
 
         const now = new Date().toISOString();
@@ -159,6 +180,8 @@ export function useCalendarSync() {
           error: result.errors.length > 0
             ? `${result.errors.length}名の同期に失敗しました`
             : null,
+          // Per-member detail ({member, error}) so callers can show WHO failed
+          errors: result.errors,
         };
       } catch (err) {
         const message = err.message || 'Outlook sync failed';

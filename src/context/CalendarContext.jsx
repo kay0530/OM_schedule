@@ -64,14 +64,22 @@ export function CalendarProvider({ children }) {
     setSyncError(null);
   }, []);
 
-  // Merge events: replace events within a date range, keep events outside it
-  const mergeEvents = useCallback((newEvents, startDate, endDate) => {
+  // Merge events: replace events within a date range, keep events outside it.
+  // - Prior copies of re-fetched ids are dropped (a multi-day event straddling
+  //   the range boundary would otherwise appear twice).
+  // - keepEmails (optional Set of lowercase emails): members whose fetch
+  //   failed this round — keep their previously cached in-range events instead
+  //   of wiping them.
+  const mergeEvents = useCallback((newEvents, startDate, endDate, keepEmails) => {
     setEventsState((prev) => {
-      const outsideRange = prev.filter((e) => {
+      const newIds = new Set(newEvents.map((e) => e.id));
+      const kept = prev.filter((e) => {
+        if (newIds.has(e.id)) return false; // re-fetched — replaced by the new copy
         const d = e.start.substring(0, 10);
-        return d < startDate || d > endDate;
+        if (d < startDate || d > endDate) return true; // outside synced range
+        return keepEmails ? keepEmails.has((e.memberEmail || '').toLowerCase()) : false;
       });
-      return [...outsideRange, ...newEvents];
+      return [...kept, ...newEvents];
     });
     setLastSynced(new Date().toISOString());
     setSyncError(null);

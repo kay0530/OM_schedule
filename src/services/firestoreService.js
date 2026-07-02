@@ -61,18 +61,22 @@ export async function saveAssignments(assignments) {
 }
 
 /**
- * Load assignments from Firestore
- * @returns {Array|null}
+ * Load assignments from Firestore.
+ * A read FAILURE (offline start, auth/App Check hiccup) must be distinguishable
+ * from "doc doesn't exist yet" — treating an error as an empty server would let
+ * the caller overwrite the shared doc with local-only data.
+ * @returns {Promise<{ok: boolean, data: Array|null}>} ok=false on read error;
+ *   data=null when the doc doesn't exist (fresh project)
  */
 export async function loadAssignments() {
-  if (!isFirestoreEnabled()) return null;
+  if (!isFirestoreEnabled()) return { ok: true, data: null };
   try {
     await firebaseAuthReady;
     const snap = await getDoc(doc(db, COLLECTION_ASSIGNMENTS, 'shared'));
-    return snap.exists() ? snap.data().assignments || [] : null;
+    return { ok: true, data: snap.exists() ? snap.data().assignments || [] : null };
   } catch (e) {
     console.error('[Firestore] Failed to load assignments:', e);
-    return null;
+    return { ok: false, data: null };
   }
 }
 

@@ -35,7 +35,7 @@ function AuthenticatedApp() {
 
 function AppInner() {
   const { assignments, dispatch } = useApp();
-  const { events } = useCalendar();
+  const { events, setEvents } = useCalendar();
   const { isAuthenticated, getToken } = useAuth();
 
   // Reconcile assignments with edits made on the Outlook side: when an
@@ -67,10 +67,23 @@ function AppInner() {
         updates.title = newTitle;
       }
       if (newDate && newDate !== a.date) updates.date = newDate;
-      // All-day events store start/end at midnight (end = next-day midnight on
-      // the Outlook side). Reconciling times would clobber the local 00:00/24:00
-      // convention and cause spurious writes, so only reconcile times for timed events.
-      if (!oe.isAllDay) {
+      // All-day handling: Outlook stores all-day events as midnight→next-day
+      // midnight, while assignments use the local 00:00/24:00 convention — so
+      // times are only reconciled for timed events. A timed⇄all-day conversion
+      // made on the Outlook side must also flip the local flag (single dispatch
+      // converges, so no reconcile loop / write storm).
+      const oeAllDay = !!oe.isAllDay;
+      if (oeAllDay !== !!a.isAllDay) {
+        updates.isAllDay = oeAllDay;
+        if (oeAllDay) {
+          // Converted to all-day — adopt the local sentinel times
+          if (a.startTime !== '00:00') updates.startTime = '00:00';
+          if (a.endTime !== '24:00') updates.endTime = '24:00';
+        } else {
+          if (newStart) updates.startTime = newStart;
+          if (newEnd) updates.endTime = newEnd;
+        }
+      } else if (!oeAllDay) {
         if (newStart && newStart !== a.startTime) updates.startTime = newStart;
         if (newEnd && newEnd !== a.endTime) updates.endTime = newEnd;
       }
@@ -253,14 +266,25 @@ function AppInner() {
         // Best-effort Outlook delete in the background; local delete is immediate
         (async () => {
           const token = isAuthenticated ? await getToken().catch(() => null) : null;
+          const failed = [];
           for (const t of targets) {
-            if (token && t.outlookEventId) {
-              const m = MEMBERS.find((mm) => mm.id === t.memberId);
-              const memberEmail = m?.email || t.memberEmail;
-              if (memberEmail && !m?.skipOutlookSync) {
-                try { await deleteEventForMember(token, m || { email: memberEmail }, t.outlookEventId); } catch { /* ignore */ }
-              }
+            if (!t.outlookEventId) continue;
+            if (!token) continue; // can't reach Outlook — leave the cached event alone
+            const m = MEMBERS.find((mm) => mm.id === t.memberId);
+            const memberEmail = m?.email || t.memberEmail;
+            if (!memberEmail) continue;
+            // deleteEventForMember never throws; 404 (already gone) counts as success
+            const result = await deleteEventForMember(token, m || { email: memberEmail }, t.outlookEventId);
+            if (result.success) {
+              // Prune the cached Outlook copy so it doesn't reappear as a
+              // ghost chip once the assignment (and its dedup link) is gone
+              setEvents((prev) => prev.filter((e) => e.id !== t.outlookEventId));
+            } else {
+              failed.push(`${m?.nameJa || memberEmail}: ${result.error}`);
             }
+          }
+          if (failed.length > 0) {
+            alert(`Outlook側の削除に失敗しました:\n${failed.join('\n')}\n（予定がOutlookに残っています。再同期で再表示された場合はOutlook上で削除してください）`);
           }
         })();
         for (const t of targets) {

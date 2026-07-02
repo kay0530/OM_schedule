@@ -58,6 +58,19 @@ export default function Header({ activeView, onNavigate, onToggleSidebar, curren
       const result = await syncFromOutlook(token, syncableMembers, startDate, endDate);
       if (result.success) {
         alert(`Outlook同期完了: ${result.count}件のイベントを取得しました`);
+      } else if (result.errors?.length) {
+        // Name WHO failed — shared-calendar errors already embed the member
+        // name + remedy, so only prefix raw errors with the member's name
+        const detail = result.errors
+          .map((e2) => {
+            const m = MEMBERS.find(
+              (mm) => ((mm.outlookEmail || mm.email) || '').toLowerCase() === String(e2.member || '').toLowerCase()
+            );
+            const msg = e2.error || '不明なエラー';
+            return m && !msg.includes(m.nameJa) ? `${m.nameJa}: ${msg}` : msg;
+          })
+          .join('\n');
+        alert(`Outlook同期: ${result.count}件取得（一部エラー）\n${detail}\n\n失敗したメンバーの予定は前回同期時の内容を表示しています。`);
       } else {
         alert(`Outlook同期: ${result.count}件取得（一部エラー: ${result.error}）`);
       }

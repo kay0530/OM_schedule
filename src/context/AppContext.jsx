@@ -26,6 +26,9 @@ function makeDebouncedSaver() {
     timer = null;
     latestPayload = null;
   };
+  // True while a write is armed but not yet flushed — used to re-base the
+  // pending payload when a fresher snapshot arrives.
+  fn.isPending = () => timer !== null;
   return fn;
 }
 
@@ -301,9 +304,11 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!isFirestoreEnabled()) return;
 
-    // Initial load: take Firestore as source of truth, only preserve
-    // *recently added* local items that may not have synced yet
-    loadAssignments().then((firestoreAssignments) => {
+    // Initial merge of a server array into local state: take Firestore as
+    // source of truth, only preserve *recently added* local items that may
+    // not have synced yet. Shared by the initial getDoc load and — when that
+    // load fails — the first live snapshot.
+    const runInitialMerge = (firestoreAssignments) => {
       gcPendingAdds();
       const localAssignments = stateRef.current.assignments;
       const fsArray = filterTombstoned(firestoreAssignments || []);
@@ -328,12 +333,33 @@ export function AppProvider({ children }) {
       }
 
       initialLoadDoneRef.current = true;
+    };
+
+    loadAssignments().then(({ ok, data }) => {
+      if (!ok) {
+        // Read FAILED (offline start, auth/App Check hiccup) — this is NOT
+        // "doc missing". Leave initialLoadDoneRef unset so the persist effect
+        // keeps cancelling Firestore writes (local-only degraded mode); the
+        // first successful live snapshot below performs the initial merge and
+        // re-enables writes. Overwriting the shared doc from this state once
+        // wiped the whole team's data.
+        console.warn('[AppContext] Initial Firestore load failed — deferring to first snapshot.');
+        return;
+      }
+      // Guard: the live snapshot may have bootstrapped us first
+      if (!initialLoadDoneRef.current) runInitialMerge(data);
     });
 
     // Subscribe to real-time updates — trust Firestore as truth, only
     // preserve recently added local items pending FS acknowledgement
     const unsubscribe = subscribeAssignments((firestoreAssignments) => {
-      if (!initialLoadDoneRef.current) return;
+      if (!initialLoadDoneRef.current) {
+        // Initial getDoc failed or hasn't resolved yet — treat the first live
+        // snapshot as the initial load (bootstraps pendingAdds/tombstone
+        // handling and re-enables writes).
+        runInitialMerge(firestoreAssignments);
+        return;
+      }
       gcPendingAdds();
       const localAssignments = stateRef.current.assignments;
       const fsArray = filterTombstoned(firestoreAssignments);
@@ -378,6 +404,14 @@ export function AppProvider({ children }) {
 
     if (fromFirestoreRef.current) {
       fromFirestoreRef.current = false;
+      // Re-base an armed (not yet flushed) write onto the just-merged snapshot
+      // state: a payload captured BEFORE the snapshot would otherwise flush
+      // later and erase the peer's change from the server. Do NOT cancel here —
+      // the load/snapshot paths intentionally queue push-back writes
+      // (tombstone filtering / pendingAdds recovery) right before this effect.
+      if (debouncedSaveRef.current.isPending()) {
+        debouncedSaveRef.current(state.assignments);
+      }
       return; // Don't save back to Firestore
     }
     debouncedSaveRef.current(state.assignments);
