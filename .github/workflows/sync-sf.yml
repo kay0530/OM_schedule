@@ -22,7 +22,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22 (LTS): latest @salesforce/cli ships an undici that crashes on
+          # Node 20 ("webidl.util.markAsUncloneable is not a function") —
+          # every cron run failed at the sf login step from 2026-07-08.
+          node-version: 22
           cache: npm
 
       - run: npm ci
