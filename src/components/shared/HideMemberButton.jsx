@@ -1,8 +1,8 @@
 /**
- * Small ✕ button shown on member-header hover — Outlook-style "hide this
- * calendar". Hides the member's column via settings.hiddenMemberIds;
- * re-showing is done from the メンバー filter popover.
- * Parent element must have `relative group` classes.
+ * Small ✕ button on member headers — Outlook-style "hide this calendar".
+ * Always visible (slightly dimmed until hovered). Hides the member's column
+ * via settings.hiddenMemberIds; re-showing is done from the メンバー filter
+ * popover. Parent element must have the `relative` class.
  *
  * @param {{ member: object, onHide: (member) => void, size?: 'md'|'sm' }}
  */
@@ -12,7 +12,7 @@ export default function HideMemberButton({ member, onHide, size = 'md' }) {
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); onHide(member); }}
-      className={`absolute top-1/2 -translate-y-1/2 hidden group-hover:flex items-center justify-center rounded hover:bg-black/25 ${
+      className={`absolute top-1/2 -translate-y-1/2 flex items-center justify-center rounded opacity-60 hover:opacity-100 hover:bg-black/25 ${
         sm ? 'right-0 w-3.5 h-3.5' : 'right-1 w-4 h-4'
       }`}
       title={`${member.nameJa}を非表示（再表示は「メンバー」フィルター）`}
