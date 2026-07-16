@@ -17,6 +17,8 @@ import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
 import AllDayOverlay from './AllDayOverlay';
 import FilterPopover from '../shared/FilterPopover';
+import { useToastContext } from '../shared/Toast';
+import HideMemberButton from '../shared/HideMemberButton';
 
 // Stable empty array for index misses — keeps referential identity so
 // per-cell getters don't hand out fresh arrays every render
@@ -59,6 +61,7 @@ function detectStatusType(title) {
 export default function WeeklyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, onMoveAssignment, activeEventId, onSlotClick, onSlotDoubleClick, selectedSlotKey }) {
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
+  const { addToast } = useToastContext();
 
   const colorOutlookEvents = settings.colorOutlookEvents ?? true;
   function toggleColorOutlook() {
@@ -80,6 +83,14 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
       ? hiddenMemberIds.filter((x) => x !== id)
       : [...hiddenMemberIds, id];
     dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: next } });
+  }
+
+  // Hide a member column via the header ✕ (Outlook-style)
+  function hideMember(member) {
+    if (!hiddenMemberIds.includes(member.id)) {
+      dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: [...hiddenMemberIds, member.id] } });
+    }
+    addToast(`${member.nameJa}を非表示にしました（再表示は「メンバー」フィルターから）`, 'info', 4000);
   }
   function toggleAllMemberFilter() {
     dispatch({
@@ -582,11 +593,12 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                               {visibleOrderedMembers.map((member) => (
                                 <div
                                   key={member.id}
-                                  className="flex-1 min-w-0 text-[9px] font-medium rounded-sm py-0.5 truncate"
+                                  className="relative group flex-1 min-w-0 text-[9px] font-medium rounded-sm py-0.5 truncate"
                                   style={{ backgroundColor: member.color, color: getContrastText(member.color) }}
                                   title={member.nameJa}
                                 >
                                   {member.nameJa}
+                                  <HideMemberButton member={member} onHide={hideMember} size="sm" />
                                 </div>
                               ))}
                             </div>
@@ -811,10 +823,11 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                       >
                         {/* Member name with color bar */}
                         <div
-                          className="text-xs font-bold rounded-sm mx-1 py-1"
+                          className="relative group text-xs font-bold rounded-sm mx-1 py-1"
                           style={{ backgroundColor: member.color, color: getContrastText(member.color) }}
                         >
                           {member.nameJa}
+                          <HideMemberButton member={member} onHide={hideMember} />
                         </div>
                         {/* Day sub-columns header */}
                         <div className="flex mt-1 gap-px px-px">

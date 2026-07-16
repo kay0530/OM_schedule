@@ -4,6 +4,8 @@ import { useApp } from '../../context/AppContext';
 import { useCalendar } from '../../context/CalendarContext';
 import { toISODate, getDayNameJa, addDays } from '../../utils/dateUtils';
 import { STATUS_KEYWORDS, STATUS_TYPES } from '../../data/statusTypes';
+import { useToastContext } from '../shared/Toast';
+import HideMemberButton from '../shared/HideMemberButton';
 
 /**
  * Detect status from an Outlook event title using keyword matching.
@@ -91,6 +93,7 @@ function groupByWeek(dates) {
 export default function MonthlyView({ navigate, currentDate, onDropJob, onEventClick }) {
   const { assignments, settings, dispatch } = useApp();
   const { events } = useCalendar();
+  const { addToast } = useToastContext();
   const showWeekends = settings?.showWeekends ?? false;
   const [dragOverCell, setDragOverCell] = useState(null);
 
@@ -114,6 +117,14 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
     } else {
       dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: [] } });
     }
+  }
+
+  // Hide a member column via the header ✕ (Outlook-style)
+  function hideMember(member) {
+    if (!hiddenMemberIds.includes(member.id)) {
+      dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: [...hiddenMemberIds, member.id] } });
+    }
+    addToast(`${member.nameJa}を非表示にしました（再表示はメンバーチップから）`, 'info', 4000);
   }
 
   const filteredMembers = useMemo(() => MEMBERS.filter(m => !hiddenMemberIds.includes(m.id)), [hiddenMemberIds]);
@@ -348,7 +359,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
               {filteredMembers.map((member) => (
                 <th
                   key={member.id}
-                  className="border border-edge px-1 py-2 text-center font-medium"
+                  className="relative group border border-edge px-1 py-2 text-center font-medium"
                   style={{
                     borderTop: `3px solid ${member.color}`,
                     color: member.color,
@@ -360,6 +371,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
                       <span className="text-ink-faint text-[10px] block">(準備)</span>
                     )}
                   </div>
+                  <HideMemberButton member={member} onHide={hideMember} />
                 </th>
               ))}
             </tr>

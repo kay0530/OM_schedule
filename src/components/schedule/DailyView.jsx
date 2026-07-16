@@ -14,6 +14,8 @@ import EventBlock from './EventBlock';
 import StatusOverlay from './StatusOverlay';
 import AllDayOverlay from './AllDayOverlay';
 import FilterPopover from '../shared/FilterPopover';
+import { useToastContext } from '../shared/Toast';
+import HideMemberButton from '../shared/HideMemberButton';
 
 const HOUR_HEIGHT = 60;
 const START_HOUR = 0;
@@ -36,6 +38,7 @@ function detectStatusType(title) {
 export default function DailyView({ navigate, currentDate, onDateChange, onDropJob, onEventClick, onEventDoubleClick, onMoveAssignment, activeEventId, onSlotClick, onSlotDoubleClick, selectedSlotKey }) {
   const { events, loading } = useCalendar();
   const { assignments, settings, dispatch } = useApp();
+  const { addToast } = useToastContext();
 
   const scrollRef = useRef(null);
   const hasAutoScrolled = useRef(false);
@@ -78,6 +81,14 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
       type: 'UPDATE_SETTINGS',
       payload: { hiddenMemberIds: hiddenMemberIds.length === 0 ? [...MEMBER_ORDER] : [] },
     });
+  }
+
+  // Hide a member column via the header ✕ (Outlook-style)
+  function hideMember(member) {
+    if (!hiddenMemberIds.includes(member.id)) {
+      dispatch({ type: 'UPDATE_SETTINGS', payload: { hiddenMemberIds: [...hiddenMemberIds, member.id] } });
+    }
+    addToast(`${member.nameJa}を非表示にしました（再表示は「メンバー」フィルターから）`, 'info', 4000);
   }
 
   // IDs of Outlook events already represented by an assignment (dedupe)
@@ -333,10 +344,11 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                     }`}
                   >
                     <div
-                      className="text-xs font-bold rounded-sm mx-1 py-1"
+                      className="relative group text-xs font-bold rounded-sm mx-1 py-1"
                       style={{ backgroundColor: member.color, color: getContrastText(member.color) }}
                     >
                       {member.nameJa}
+                      <HideMemberButton member={member} onHide={hideMember} />
                     </div>
                   </div>
                 ))}
