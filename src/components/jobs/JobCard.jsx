@@ -1,3 +1,5 @@
+import { enableDropThroughChips } from '../../utils/dragPassthrough';
+
 /**
  * Individual job card displayed within the JobPanel.
  * Supports both opportunity (レンタル商談) and maintenance (点検／修繕) records.
@@ -64,20 +66,8 @@ export default function JobCard({ opportunity: item, onSelect }) {
   function handleDragStart(e) {
     e.dataTransfer.setData('application/json', JSON.stringify(item));
     e.dataTransfer.effectAllowed = 'copyMove';
-    // Delay disabling so the drag source remains interactive during dragStart
-    setTimeout(() => {
-      // Disable EventBlocks so drops reach slot divs underneath
-      document.querySelectorAll('[data-event-block]').forEach((el) => {
-        el.style.pointerEvents = 'none';
-      });
-    }, 0);
-  }
-
-  function handleDragEnd() {
-    // Restore EventBlocks
-    document.querySelectorAll('[data-event-block]').forEach((el) => {
-      el.style.pointerEvents = '';
-    });
+    // Let the drop reach the slot underneath even on an occupied slot
+    enableDropThroughChips();
   }
 
   return (
@@ -86,7 +76,6 @@ export default function JobCard({ opportunity: item, onSelect }) {
       tabIndex={0}
       draggable="true"
       onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
       onClick={() => onSelect(item)}
       onKeyDown={(e) => { if (e.key === 'Enter') onSelect(item); }}
       className="w-full text-left p-3 rounded-lg border border-edge hover:border-accent hover:shadow-sm bg-surface transition-all cursor-grab active:cursor-grabbing group"

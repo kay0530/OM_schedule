@@ -644,7 +644,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                     }`}
                                     style={useOutlookColor ? { '--mc': member.color, '--on-mc': getContrastText(member.color) } : {}}
                                     title={evt.title}
-                                    onClick={(e) => { e.stopPropagation(); onEventClick(evt); }}
+                                    onClick={(e) => { e.stopPropagation(); onEventClick(evt, { date: toISODate(date), memberId: member.id }); }}
                                     onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(evt); }}
                                   >
                                     {evt.title}
@@ -659,7 +659,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                       className={`text-[10px] font-semibold leading-tight truncate rounded px-1 py-1 mb-0.5 cursor-pointer flex items-center gap-1 ${alldayChipClass(synced)}`}
                                       style={{ '--mc': member.color, '--on-mc': getContrastText(member.color) }}
                                       title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
-                                      onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
+                                      onClick={(e) => { e.stopPropagation(); onEventClick(a, { date: toISODate(date), memberId: member.id }); }}
                                       onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
                                     >
                                       <span className={`text-[8px] leading-none px-1 py-px rounded font-bold ${
@@ -888,7 +888,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                     }`}
                                     style={colorOutlookEvents ? { '--mc': member.color, '--on-mc': getContrastText(member.color) } : {}}
                                     title={evt.title}
-                                    onClick={(e) => { e.stopPropagation(); onEventClick(evt); }}
+                                    onClick={(e) => { e.stopPropagation(); onEventClick(evt, { date: toISODate(date), memberId: member.id }); }}
                                     onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(evt); }}
                                   >
                                     {evt.title}
@@ -902,7 +902,7 @@ export default function WeeklyView({ navigate, currentDate, onDateChange, onDrop
                                       className={`text-[9px] font-semibold truncate rounded-sm px-1 py-0.5 mb-0.5 cursor-pointer flex items-center gap-1 ${alldayChipClass(synced)}`}
                                       style={{ '--mc': member.color, '--on-mc': getContrastText(member.color) }}
                                       title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
-                                      onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
+                                      onClick={(e) => { e.stopPropagation(); onEventClick(a, { date: toISODate(date), memberId: member.id }); }}
                                       onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
                                     >
                                       <span className={`text-[7px] leading-none px-0.5 rounded font-bold ${

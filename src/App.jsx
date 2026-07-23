@@ -19,6 +19,35 @@ import LoginGate from './components/auth/LoginGate';
 import ThemeApplier from './components/shared/ThemeApplier';
 import { SfDataProvider } from './context/SfDataContext';
 
+/**
+ * The grid slot an existing event occupies, so a click on the event can be
+ * treated as a click on the slot beneath it (placing on top of it).
+ *
+ * @param {object} ev - the clicked event/assignment
+ * @param {{date?: string, memberId?: string}} [cell] - the cell the chip was
+ *   rendered in. It WINS over the event's own values: a multi-day all-day
+ *   event is drawn in every covered column but always carries its original
+ *   start date, so without this a click on Thursday's chip would place the new
+ *   schedule back on Monday.
+ * @returns {{date: string, time: string, memberId: string}|null}
+ */
+function slotFromEvent(ev, cell) {
+  if (!ev) return null;
+  const date = cell?.date || ev.date || ev.start?.substring(0, 10) || null;
+  // All-day chips have no meaningful clock time — use the working-day start,
+  // matching what the all-day cells pass to onSlotDoubleClick.
+  const time = ev.isAllDay ? '08:00' : (ev.startTime || ev.start?.substring(11, 16) || null);
+  // Outlook events carry memberKey (member id, or the raw email when the
+  // address isn't in MEMBER_EMAIL_MAP — e.g. the 納品 calendar), so fall back
+  // to matching the address against the member list.
+  const memberId = cell?.memberId
+    || ev.memberId
+    || (MEMBERS.some((m) => m.id === ev.memberKey) ? ev.memberKey : null)
+    || MEMBERS.find((m) => (m.email || '').toLowerCase() === (ev.memberEmail || '').toLowerCase())?.id
+    || null;
+  return date && time && memberId ? { date, time, memberId } : null;
+}
+
 function AuthenticatedApp() {
   const { isAuthenticated, loading } = useAuth();
   if (loading || !isAuthenticated) {
@@ -183,7 +212,7 @@ function AppInner() {
   }
 
   // Called when a slot is clicked in WeeklyView (single click)
-  function handleSlotClick(date, time, memberId) {
+  const handleSlotClick = useCallback((date, time, memberId) => {
     if (pickedJob) {
       setSelectedOpportunity(pickedJob);
       const startH = parseInt(time.substring(0, 2));
@@ -191,6 +220,9 @@ function AppInner() {
       setAssignPresets({ preselectedMember: memberId, preselectedDate: date, startTime: time, endTime });
       setAssignModalOpen(true);
       setPickedJob(null);
+      // Placing a job consumes the click — an armed paste must not stay armed
+      // and silently fire on the next slot click after the modal closes.
+      setPasteArmed(false);
       return;
     }
     // Armed paste-on-click (fallback flow: Ctrl+V pressed before choosing a slot)
@@ -201,7 +233,8 @@ function AppInner() {
     // Remember the clicked slot as the paste destination & deselect event
     setSelectedSlot({ date, time, memberId });
     setActiveEvent(null);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedJob, copiedEvent, pasteArmed]);
 
   // Called on double-click on empty slot — quick add (no SF job)
   function handleSlotDoubleClick(date, time, memberId, options) {
@@ -227,18 +260,32 @@ function AppInner() {
     setAssignPresets({});
   }
 
-  // Single click on event = activate (select)
-  const handleEventClick = useCallback((event) => {
-    if (pickedJob) return;
+  // Single click on event = activate (select). While a job is picked or an
+  // event is copied, a click on an existing event still means "place here" —
+  // otherwise a schedule could never be put ON TOP of an existing one, since
+  // the chip covers the slot. Covers chips the placement-mode CSS can't reach
+  // (all-day row, monthly view), which have no slot handler underneath.
+  const handleEventClick = useCallback((event, cell) => {
+    const slot = slotFromEvent(event, cell);
+    if (slot && (pickedJob || (copiedEvent && pasteArmed))) {
+      handleSlotClick(slot.date, slot.time, slot.memberId);
+      return;
+    }
     setActiveEvent(event);
-  }, [pickedJob]);
+    // Holding a clipboard: also mark the slot this event sits on as the paste
+    // destination, so Ctrl+V can drop a copy on top of it.
+    if (copiedEvent && slot) setSelectedSlot(slot);
+  }, [pickedJob, copiedEvent, pasteArmed, handleSlotClick]);
 
-  // Double click on event = open detail modal
+  // Double click on event = open detail modal.
+  // Suppressed while a placement modal is opening: the first click of a
+  // double-click on an all-day/monthly chip already placed the job, and the
+  // detail modal would then stack on top of the assign/quick-add modal.
   const handleEventDoubleClick = useCallback((event) => {
-    if (pickedJob) return;
+    if (pickedJob || assignModalOpen || quickAddOpen) return;
     setSelectedEvent(event);
     setEventDetailOpen(true);
-  }, [pickedJob]);
+  }, [pickedJob, assignModalOpen, quickAddOpen]);
 
   function handleCloseEventDetail() {
     setEventDetailOpen(false);
@@ -524,7 +571,19 @@ function AppInner() {
           📋 貼り付けモード — 「{copiedEvent.opportunityName}」をカレンダーのスロットをクリックして配置 （クリック/Escでキャンセル）
         </div>
       )}
-      <div onKeyDown={handleKeyDown} tabIndex={-1}>
+      {/* data-placement-mode: while a job is picked, or paste is armed, the
+          next click is meant to PLACE something on a slot — index.css turns off
+          pointer events on the event chips so the click reaches the slot even
+          when it is already occupied (overlapping schedules are allowed).
+          Both states clear themselves the moment the placement happens, so the
+          chips can never stay stuck non-interactive. A bare copiedEvent is
+          deliberately NOT included: it persists for repeat-pasting, and the
+          paste destination is handled in handleEventClick instead. */}
+      <div
+        onKeyDown={handleKeyDown}
+        tabIndex={-1}
+        data-placement-mode={pickedJob || pasteArmed ? 'true' : undefined}
+      >
         <MainLayout
           activeView={activeView}
           onNavigate={navigate}

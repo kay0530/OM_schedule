@@ -127,6 +127,19 @@ body {
   color: var(--neutral-text);
   border-left: 3px solid var(--neutral-edge);
 }
+/* Let clicks/drops reach the slot cell UNDER an event chip, so a schedule can
+   be placed on top of an existing one. Chips are absolutely-positioned
+   siblings stacked over the cells that carry the handlers, so without this
+   they swallow the gesture and the placement is rejected.
+     - data-placement-mode: a job is picked, or paste is armed — the next
+       click means "place here" (set in App.jsx).
+     - data-drag-passthrough: an HTML5 drag is in flight (utils/dragPassthrough).
+   Both are transient. Unlayered on purpose (see the note above). */
+[data-placement-mode="true"] [data-event-block],
+[data-drag-passthrough="true"] [data-event-block] {
+  pointer-events: none;
+}
+
 /* All-day full-column band (AllDayOverlay) */
 .allday-band {
   background: color-mix(in srgb, var(--mc) 12%, transparent);

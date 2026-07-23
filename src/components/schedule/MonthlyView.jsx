@@ -267,7 +267,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
             title={a.title || a.opportunityName || ''}
             onClick={(e) => {
               e.stopPropagation();
-              if (onEventClick) onEventClick(a);
+              if (onEventClick) onEventClick(a, { date: dateStr, memberId: member.id });
             }}
           >
             {a.title || a.opportunityName || '案件'}
@@ -286,7 +286,7 @@ export default function MonthlyView({ navigate, currentDate, onDropJob, onEventC
             title={title}
             onClick={(e) => {
               e.stopPropagation();
-              if (onEventClick) onEventClick(ev);
+              if (onEventClick) onEventClick(ev, { date: dateStr, memberId: member.id });
             }}
           >
             {title}

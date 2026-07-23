@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { timeStringToMinutes, minutesToTimeString } from '../../utils/dateUtils';
 import { getContrastText } from '../../utils/colorUtils';
+import { enableDropThroughChips } from '../../utils/dragPassthrough';
 
 /**
  * Single event block rendered on the weekly calendar grid.
@@ -99,6 +100,9 @@ export default function EventBlock({ event, hourHeight, startHour, memberColor, 
     if (blockRef.current) {
       e.dataTransfer.setDragImage(blockRef.current, 10, 10);
     }
+    // Without this the drop is rejected whenever the target slot already has
+    // an event on it — the covering chip swallows dragover/drop.
+    enableDropThroughChips();
   }
 
   // Resize handlers (top/bottom edges, assignments only). The delta is

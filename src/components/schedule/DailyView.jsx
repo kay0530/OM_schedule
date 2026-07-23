@@ -380,7 +380,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                             }`}
                             style={useOutlookColor ? { '--mc': member.color, '--on-mc': getContrastText(member.color) } : {}}
                             title={evt.title}
-                            onClick={(e) => { e.stopPropagation(); onEventClick(evt); }}
+                            onClick={(e) => { e.stopPropagation(); onEventClick(evt, { date: dateStr, memberId: member.id }); }}
                             onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(evt); }}
                           >
                             {evt.title}
@@ -396,7 +396,7 @@ export default function DailyView({ navigate, currentDate, onDateChange, onDropJ
                               }`}
                               style={{ '--mc': member.color, '--on-mc': getContrastText(member.color) }}
                               title={`${a.opportunityName}${synced ? '（Outlook送信済み）' : '（仮・未送信）'}`}
-                              onClick={(e) => { e.stopPropagation(); onEventClick(a); }}
+                              onClick={(e) => { e.stopPropagation(); onEventClick(a, { date: dateStr, memberId: member.id }); }}
                               onDoubleClick={(e) => { e.stopPropagation(); onEventDoubleClick(a); }}
                             >
                               <span className={`text-[8px] leading-none px-1 py-px rounded font-bold ${
